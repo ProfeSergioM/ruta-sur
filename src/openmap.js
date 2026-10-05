@@ -224,14 +224,19 @@ export function tree( mb, x, z, seed ) {
 
 }
 
-// Farol: poste, brazo hacia la calle y lámpara
-export function lamp( mb, x, z, towardX, towardZ ) {
+// Farol: poste y brazo hacia la calle en `mb`; la lámpara en `glow` (de noche se enciende) y,
+// en `pool`, un disco de luz sobre la calzada que se dibuja sumando (claro al centro, nada al borde)
+export function lamp( mb, glow, pool, x, z, towardX, towardZ ) {
 
 	const H = 8;
 	mb.box( x - 0.09, x + 0.09, z - 0.09, z + 0.09, 0, H, COLORS.post );
 	const ax = x + towardX * 0.8, az = z + towardZ * 0.8;
 	mb.box( Math.min( x, ax ) - 0.05, Math.max( x, ax ) + 0.05, Math.min( z, az ) - 0.05, Math.max( z, az ) + 0.05, H - 0.1, H, COLORS.post );
-	mb.box( ax - 0.3, ax + 0.3, az - 0.3, az + 0.3, H - 0.3, H, COLORS.lamp, 1 );
+	glow.box( ax - 0.3, ax + 0.3, az - 0.3, az + 0.3, H - 0.3, H, COLORS.lamp, 1 );
+	const px = x + towardX * 3.2, pz = z + towardZ * 3.2, R = 7;
+	const center = pool.vertex( px, 0.04, pz, COLORS.lamp, 1 ), ring = [];
+	for ( let k = 0; k < 12; k ++ ) { const th = Math.PI * 2 * k / 12; ring.push( pool.vertex( px + Math.cos( th ) * R, 0.04, pz + Math.sin( th ) * R, COLORS.lamp, 0 ) ); }
+	for ( let k = 0; k < 12; k ++ ) pool.tri( center, ring[ ( k + 1 ) % 12 ], ring[ k ] );
 
 }
 
@@ -372,7 +377,7 @@ export function buildOpenChunk( city, i, j ) {
 
 	const size = city.chunk, x0 = i * size, z0 = j * size, x1 = x0 + size, z1 = z0 + size;
 	const mb = new MeshBuilder(), walk = new MeshBuilder(), road = new MeshBuilder(), line = new MeshBuilder();
-	const bld = new MeshBuilder(), park = new MeshBuilder(), decor = new MeshBuilder();
+	const bld = new MeshBuilder(), park = new MeshBuilder(), decor = new MeshBuilder(), glow = new MeshBuilder(), pool = new MeshBuilder();
 	const entry = ( city.index || chunkIndex( city, size ) ).get( key( i, j ) ) || { segments: [], buildings: [], greens: [], trees: [] };
 	const within = ( x, z ) => x >= x0 && x < x1 && z >= z0 && z < z1;
 
@@ -486,18 +491,18 @@ export function buildOpenChunk( city, i, j ) {
 			const d = t - a0, side = ( Math.round( t / LAMP_SPACING ) % 2 ) * 2 - 1;
 			const x = p.x + dx * d + nx * ( w.width / 2 + 0.5 ) * side, z = p.z + dz * d + nz * ( w.width / 2 + 0.5 ) * side;
 			if ( ! within( x, z ) || nearOtherRoad( x, z, wi ) ) continue;
-			lamp( decor, x, z, - nx * side, - nz * side );
+			lamp( decor, glow, pool, x, z, - nx * side, - nz * side );
 			lampsOf.push( x );
 
 		}
 
 	}
 
-	return { ground: mb.finish(), buildings: bld.finish(), park: park.finish(), walk: walk.finish(), road: road.finish(), line: line.finish(), decor: decor.finish(), trees: count, lamps: lampsOf.length };
+	return { ground: mb.finish(), buildings: bld.finish(), park: park.finish(), walk: walk.finish(), road: road.finish(), line: line.finish(), decor: decor.finish(), glow: glow.finish(), pool: pool.finish(), trees: count, lamps: lampsOf.length };
 
 }
 
-export const LAYERS = [ 'ground', 'buildings', 'park', 'walk', 'road', 'line', 'decor' ];
+export const LAYERS = [ 'ground', 'buildings', 'park', 'walk', 'road', 'line', 'decor', 'glow', 'pool' ];
 export const RAY_LAYERS = [ 'ground', 'buildings' ]; // las que responden los rayos de la física
 
 // Cerros brumosos en el horizonte: un anillo de lomas con alturas de ruido, decorativo.

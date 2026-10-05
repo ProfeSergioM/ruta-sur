@@ -12,6 +12,7 @@ import { Input } from './input.js';
 import { Sound } from './audio.js';
 import { Mirrors } from './mirrors.js';
 import { Radio } from './radio.js';
+import { daylight, clockText, wrapHour, DAY_SECONDS_PER_HOUR } from './daylight.js';
 import { compassFromYaw, compassName } from './geo.js';
 
 // La versión sale de package.json: tools/build.mjs la fija al armar el archivo.
@@ -107,7 +108,8 @@ const camera = new THREE.PerspectiveCamera( 62, viewAspect(), 0.5, 4000 );
 camera.position.set( 0, 600, 0 );
 camera.lookAt( 0, 0, 0 );
 
-scene.add( new THREE.HemisphereLight( 0xffffff, 0x5a6470, 1.25 ) );
+const hemi = new THREE.HemisphereLight( 0xffffff, 0x5a6470, 1.25 );
+scene.add( hemi );
 const sun = new THREE.DirectionalLight( 0xfff1d6, 1.7 );
 sun.position.set( - 0.5, 1, 0.35 );
 scene.add( sun );
@@ -153,6 +155,7 @@ const game = {
 	spec: null, quality: QUALITY.media,
 	ghost: false, debug: false,
 	mirrors: null, mirrorInsets: true,   // espejos retrovisores y sus recuadros en pantalla
+	hour: 17,                            // hora del juego (0 a 24); el ciclo de luz sale de aquí
 	cam: { mode: 0, lookYaw: 0, lookPitch: 0, orbit: 0, lift: 0, yaw: 0, init: false },
 	load: null,
 	limit: 0,
@@ -205,6 +208,7 @@ function buildMenu() {
 	chips( $( 'calidades' ), 'calidad', Object.entries( QUALITY ).map( ( [ id, q ] ) => [ id, q.label ] ), config.quality );
 	check( cities, config.city );
 
+	$( 'version' ).textContent = VERSION;
 	const coords = $( 'coordenadas' );
 	coords.value = config.coords || '';
 	const syncCity = () => { coords.hidden = selected( 'ciudad' ) !== 'otro'; };
@@ -328,6 +332,7 @@ function start( opts ) {
 	teardown();
 	game.spec = VEHICLES[ opts.truck ] || VEHICLES.articulado;
 	game.quality = QUALITY[ opts.quality ] || QUALITY.media;
+	game.hour = Number.isFinite( opts.hour ) ? wrapHour( opts.hour ) : 17;
 	renderer.setPixelRatio( Math.min( window.devicePixelRatio || 1, game.quality.pixelRatio ) );
 	// durante la carga la cámara mira desde muy alto, hasta saber dónde está el suelo
 	camera.far = 20000; camera.near = 5; camera.fov = 50;
@@ -405,6 +410,7 @@ function loadingStep( dt ) {
 	camera.up.set( 0, 0, 1 );
 	camera.lookAt( sx, gy, sz );
 	world.update( _focus, dt, L.ground !== null );
+	applyDaylight();
 
 	const p = world.progress;
 
@@ -501,6 +507,7 @@ function beginDriving( t ) {
 	if ( game.graph ) game.jobs.offer( t );
 
 	game.cam.init = false; game.cam.lookYaw = 0; game.cam.lookPitch = 0; game.cam.orbit = 0; game.cam.yaw = t.yaw;
+	hud.setClock( clockText( game.hour ) );
 	camera.far = game.quality.far;
 	setCamera( game.cam.mode );
 	camera.up.set( 0, 1, 0 );
@@ -576,6 +583,29 @@ function setPaused( on ) {
 // Acciones del jugador
 // --------------------------------------------------------------------------
 const CAM_NAMES = [ 'Cabina', 'Exterior', 'Cenital' ];
+
+// Ciclo de día y noche: el cielo, la bruma, las luces del camión y el tinte de la ciudad
+// siguen la hora del juego. Los faroles y las ventanas se encienden con el crepúsculo.
+const _sky = { top: new THREE.Color(), horizon: new THREE.Color() };
+let _lastDaylight = null;
+function applyDaylight() {
+
+	const d = daylight( game.hour );
+	_sky.top.setRGB( d.skyTop[ 0 ], d.skyTop[ 1 ], d.skyTop[ 2 ] );
+	_sky.horizon.setRGB( d.skyHorizon[ 0 ], d.skyHorizon[ 1 ], d.skyHorizon[ 2 ] );
+	sky.material.uniforms.top.value.copy( _sky.top );
+	sky.material.uniforms.horizon.value.copy( _sky.horizon );
+	scene.fog.color.copy( _sky.horizon );
+	scene.background = _sky.horizon;
+	hemi.intensity = 1.25 * ( 0.12 + 0.88 * d.level );
+	sun.intensity = 1.7 * d.sun;
+	sun.color.setRGB( 1, 0.95 - 0.25 * d.dusk, 0.84 - 0.4 * d.dusk );
+	if ( game.world && game.world.setLight ) game.world.setLight( d );
+	if ( game.model ) game.model.setNight( 1 - d.level );
+	_lastDaylight = d;
+	return d;
+
+}
 const WORLD_NAMES = { test: 'ciudad de pruebas', open: 'mapa abierto' };
 
 function setCamera( mode ) {
@@ -583,6 +613,7 @@ function setCamera( mode ) {
 	game.cam.mode = mode;
 	if ( game.model ) game.model.setCabinView( mode === 0 );
 	if ( game.mirrors ) game.mirrors.setActive( mode === 0 );
+	applyDaylight();
 	$( 'espejos' ).hidden = ! ( mode === 0 && game.mirrorInsets );
 	camera.fov = [ 62, 55, 50 ][ mode ];
 	camera.near = mode === 0 ? 0.12 : 0.5;
@@ -605,6 +636,7 @@ function onAction( name ) {
 			break;
 		case 'mute': sound.setMuted( ! sound.muted ); radio.setMuted( sound.muted ); hud.toast( sound.muted ? 'Sonido apagado' : 'Sonido encendido', '', 1.5 ); break;
 		case 'radio': radio.next(); if ( ! radio.current ) hud.toast( 'Radio apagada', '', 1.5 ); break;
+		case 'hour': game.hour = wrapHour( Math.floor( game.hour ) + 1 ); applyDaylight(); hud.toast( `Hora: ${ clockText( game.hour ) }${ _lastDaylight && _lastDaylight.lampsOn ? ' · luces encendidas' : '' }`, '', 1.5 ); break;
 		case 'mirrors':
 			game.mirrorInsets = ! game.mirrorInsets;
 			$( 'espejos' ).hidden = ! ( game.cam.mode === 0 && game.mirrorInsets );
@@ -755,6 +787,7 @@ function physicsStep( inp ) {
 	const odo = t.odo, dirSign = Math.sign( t.v ) || 1;
 	const ev = stepTruck( t, inp, game.world.terrain, H, { collisions: ! game.ghost } );
 	game.simTime += H;
+	game.hour = wrapHour( game.hour + H / DAY_SECONDS_PER_HOUR );
 	if ( ev.side ) game.lastSide = ev.side;
 	if ( ev.impact > 0.85 ) { sound.thud( ev.impact ); hud.toast( `Choque a ${ Math.round( ev.impact * 3.6 ) } km/h`, 'alerta', 2.2 ); game.lastImpact = ev.impact; }
 	else if ( ev.side ) {
@@ -821,6 +854,7 @@ function drivingStep( dt ) {
 	game.perf.rays += world.field.rays - rays0;
 
 	game.model.update( t, dt, travel );
+	applyDaylight();
 	updateCamera( dt, inp.look );
 	_focus.set( t.x, t.y, t.z );
 	world.update( _focus, dt, true );
@@ -907,6 +941,7 @@ function drivingStep( dt ) {
 
 		T.hud = 0.1;
 		hud.setDrive( speedKmh( t ), gearLabel( t ), t.rpm, game.limit );
+		hud.setClock( clockText( game.hour ) );
 		hud.setRpmHigh( t.rpm > t.spec.engine.powerEnd );
 		updateJobCard();
 		const src = world.attribution();
@@ -1069,8 +1104,10 @@ if ( renderer ) {
 	// Arranque directo para pruebas y desarrollo:
 	//   ?auto=test                      ciudad de pruebas
 	//   ?auto=open&lat=..&lon=..        mapa abierto desde OpenStreetMap (sin lat y lon: Temuco)
-	if ( params.get( 'auto' ) === 'test' ) start( { test: true, truck: params.get( 'veh' ) || config.truck, quality: params.get( 'q' ) || config.quality } );
-	else if ( params.get( 'auto' ) === 'open' ) start( { open: true, lat: parseFloat( params.get( 'lat' ) ) || CITIES[ 0 ].lat, lon: parseFloat( params.get( 'lon' ) ) || CITIES[ 0 ].lon, truck: params.get( 'veh' ) || config.truck, quality: params.get( 'q' ) || config.quality } );
+	//   &hora=21                        hora del juego al empezar (0 a 24)
+	const hour = params.has( 'hora' ) ? parseFloat( params.get( 'hora' ) ) : undefined;
+	if ( params.get( 'auto' ) === 'test' ) start( { test: true, truck: params.get( 'veh' ) || config.truck, quality: params.get( 'q' ) || config.quality, hour } );
+	else if ( params.get( 'auto' ) === 'open' ) start( { open: true, lat: parseFloat( params.get( 'lat' ) ) || CITIES[ 0 ].lat, lon: parseFloat( params.get( 'lon' ) ) || CITIES[ 0 ].lon, truck: params.get( 'veh' ) || config.truck, quality: params.get( 'q' ) || config.quality, hour } );
 
 } else {
 

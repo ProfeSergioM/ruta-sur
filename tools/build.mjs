@@ -103,4 +103,6 @@ if ( external.length || /type\s*=\s*["']?importmap/i.test( html ) ) throw new Er
 mkdirSync( dirname( out ), { recursive: true } );
 writeFileSync( out, html );
 writeFileSync( resolve( dirname( out ), '.nojekyll' ), '' ); // GitHub Pages: servir los archivos tal cual, sin pasar por Jekyll
+// la versión publicada, para que otras páginas del sitio (la portada) la muestren
+writeFileSync( resolve( dirname( out ), 'version.json' ), JSON.stringify( { version: VERSION } ) + '\n' );
 console.log( `docs/index.html · ${ KB( Buffer.byteLength( html ) ) } en total: programa ${ KB( Buffer.byteLength( code ) ) }, tipografías ${ KB( fonts.reduce( ( a, f ) => a + f.datos.length, 0 ) ) }, licencias ${ KB( licenses.length ) }` );

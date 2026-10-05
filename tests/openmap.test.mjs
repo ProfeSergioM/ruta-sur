@@ -153,6 +153,10 @@ const triArea = ( poly, tris ) => { let a = 0; for ( let i = 0; i < tris.length;
 	let lamps = 0;
 	for ( const w of city.ways ) if ( w.width >= 8 ) { lamps += buildOpenChunk( city, chunkOf( w.pts[ 0 ].x ), chunkOf( w.pts[ 0 ].z ) ).lamps; if ( lamps ) break; }
 	report( 'Las vías terciarias y mayores llevan faroles', lamps > 0, `${ lamps }` );
+	// con faroles, hay lámparas en la capa que se enciende y charcos de luz en la capa que se suma
+	let lit = null;
+	for ( const w of city.ways ) if ( w.width >= 8 ) { const p = buildOpenChunk( city, chunkOf( w.pts[ 0 ].x ), chunkOf( w.pts[ 0 ].z ) ); if ( p.lamps ) { lit = p; break; } }
+	report( 'Cada farol lleva su lámpara y su charco de luz', lit && lit.glow.indices.length === lit.lamps * 30 && lit.pool.indices.length === lit.lamps * 36, lit && `${ lit.lamps } faroles, ${ lit.glow.indices.length / 3 } triángulos de lámpara, ${ lit.pool.indices.length / 3 } de charco` );
 	const hills = hillRing( 1000, 1500, 60 );
 	report( 'Los cerros del horizonte son un anillo cerrado con alturas variadas', hills.positions.length === 60 * 3 * 3 && hills.indices.length === 60 * 2 * 6 && Math.max( ...[ ...hills.positions ].filter( ( v, i ) => i % 3 === 1 ) ) > 100 );
 	// coordenadas de textura de la calzada: u cruza la franja (0 o 1) y v avanza en metros / TEXTURE_METERS

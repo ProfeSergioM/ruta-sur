@@ -188,7 +188,7 @@ for ( const [ width, height ] of [ [ 460, 760 ], [ 380, 700 ] ] ) {
 
 	const inside = ids.every( id => boxes.out[ id ].l >= 0 && boxes.out[ id ].r <= boxes.w + 0.5 && boxes.out[ id ].t >= 0 && boxes.out[ id ].b <= boxes.h + 0.5 );
 	R.check( 'Guía, minimapa, maniobra, aviso y tablero están todos a la vista', ids.length === 5, ids.join( ', ' ) );
-	R.check( 'Ninguno queda encima de otro ni fuera de la vista', clash.length === 0 && inside, clash.join( '; ' ) || 'sin cruces' );
+	R.check( 'Ninguno queda encima de otro ni fuera de la vista', clash.length === 0 && inside, clash.join( '; ' ) || ( inside ? 'sin cruces' : 'fuera de la vista: ' + ids.filter( id => ! ( boxes.out[ id ].l >= 0 && boxes.out[ id ].r <= boxes.w + 0.5 && boxes.out[ id ].t >= 0 && boxes.out[ id ].b <= boxes.h + 0.5 ) ).map( id => `${ id } ${ JSON.stringify( boxes.out[ id ] ) }` ).join( '; ' ) + ` en ${ boxes.w } × ${ boxes.h }` ) );
 	await sleep( page, 1500 );
 	await page.screenshot( { path: `${ SHOTS }/vista-previa-05-angosta-${ width }.png` } );
 	R.check( 'Sin errores', log.errors.length === 0, log.errors.slice( 0, 3 ).join( ' | ' ) );

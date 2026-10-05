@@ -62,6 +62,7 @@ a { color: var(--ambar); }
 	margin: 4px;
 }
 .marca { display: flex; align-items: center; gap: 14px; }
+.marca .version { align-self: flex-end; margin-bottom: 10px; font: 400 12px/1 var(--f-dato); color: var(--tenue); opacity: 0.85; }
 .escudo {
 	flex: none; width: 54px; height: 60px; display: grid; place-items: center;
 	background: var(--linea); color: var(--senal);
@@ -143,6 +144,7 @@ legend { font: 800 12px/1 var(--f-senal); letter-spacing: 0.14em; text-transform
 #velocidad { font: 600 54px/0.9 var(--f-dato); font-variant-numeric: tabular-nums; min-width: 2.1ch; text-align: right; }
 .unidad { font: 800 11px/1 var(--f-senal); letter-spacing: 0.14em; color: var(--tenue); text-transform: uppercase; margin-bottom: 7px; }
 #marcha { font: 800 26px/1 var(--f-senal); width: 40px; height: 40px; display: grid; place-items: center; border: 2px solid var(--ambar); color: var(--ambar); border-radius: 6px; padding-top: 3px; }
+#reloj { font: 600 18px/1 var(--f-dato); font-variant-numeric: tabular-nums; color: var(--tenue); margin-bottom: 9px; }
 #rpm { width: 132px; }
 #rpm .barra { height: 10px; border-radius: 2px; background: var(--asfalto-3); overflow: hidden; position: relative; }
 #rpm .barra i { position: absolute; inset: 0 auto 0 0; width: 0; background: var(--ambar); }
@@ -283,7 +285,7 @@ html:not( .js ) #menu, html:not( .js ) #view { display: none; }
 	#guia .destino { font-size: 14px; }
 	#guia .timbre { margin-top: 6px; }
 	#velocidad { font-size: 38px; }
-	#rpm { display: none; }
+	#rpm, #reloj { display: none; }
 	#tablero { gap: 10px; padding: 7px 12px 5px; }
 	#limite { width: 38px; height: 38px; border-width: 5px; font-size: 14px; }
 	#marcha { width: 34px; height: 34px; font-size: 22px; }
@@ -321,11 +323,14 @@ html:not( .js ) #menu, html:not( .js ) #view { display: none; }
 	#guia .destino { font-size: 15px; }
 	#velocidad { font-size: 42px; }
 	#rpm { width: 86px; }
+	#reloj { font-size: 15px; margin-bottom: 8px; }
+	#tablero { gap: 10px; }
 }
 /* muy angosta: en la guía, cada rótulo va sobre su dato para que las palabras largas quepan enteras */
 @media ( max-width: 400px ) {
 	#guia dl { grid-template-columns: minmax( 0, 1fr ); gap: 0; }
 	#guia dt { line-height: 1.3; margin-top: 4px; }
+	#rpm { display: none; } /* el tablero cabe con el reloj; la barra de revoluciones sobra */
 }
 </style>
 <script>
@@ -578,6 +583,7 @@ html:not( .js ) #menu, html:not( .js ) #view { display: none; }
 		<div><div id="velocidad">0</div></div>
 		<div class="unidad">km/h</div>
 		<div id="marcha" title="Marcha">N</div>
+		<div id="reloj" title="Hora del juego">17:00</div>
 		<div id="rpm"><div class="barra"><i></i></div><div class="escala"><span>5</span><span>10</span><span>15</span><span>20</span><span>25</span></div><div class="unidad" style="margin:4px 0 0">rpm × 100</div></div>
 	</div>
 
@@ -602,7 +608,7 @@ html:not( .js ) #menu, html:not( .js ) #view { display: none; }
 	<div class="portico">
 		<!-- No es un <form>: un marco aislado sin permiso de formularios bloquea el envío y el botón quedaría sin efecto. -->
 		<div class="senal" id="formulario" role="form" aria-label="Preparar la partida">
-			<div class="marca"><div class="escudo" aria-hidden="true">RS</div><h1>Ruta Sur</h1></div>
+			<div class="marca"><div class="escudo" aria-hidden="true">RS</div><h1>Ruta Sur</h1><span class="version" id="version"></span></div>
 			<p class="bajada">Conduce un camión por las calles verdaderas de una ciudad, levantadas desde OpenStreetMap, y reparte cargas entre esquinas.</p>
 
 			<fieldset>
@@ -645,6 +651,7 @@ html:not( .js ) #menu, html:not( .js ) #view { display: none; }
 					<dt>Q · E · arrastrar</dt><dd>Mirar a los lados</dd>
 					<dt>V</dt><dd>Espejos en pantalla</dd>
 					<dt>X</dt><dd>Radio: la emisora siguiente</dd>
+					<dt>T</dt><dd>Adelantar la hora (una hora del juego dura un minuto)</dd>
 					<dt>Enter · N</dt><dd>Aceptar el encargo · pedir otro</dd>
 					<dt>R</dt><dd>Volver a la calle más cercana</dd>
 					<dt>G</dt><dd>Activar o desactivar los choques</dd>
@@ -671,6 +678,7 @@ html:not( .js ) #menu, html:not( .js ) #view { display: none; }
 			<dt>Q · E · arrastrar</dt><dd>Mirar a los lados</dd>
 			<dt>V</dt><dd>Espejos en pantalla</dd>
 			<dt>X</dt><dd>Radio: la emisora siguiente</dd>
+			<dt>T</dt><dd>Adelantar la hora (una hora del juego dura un minuto)</dd>
 			<dt>Enter · N</dt><dd>Aceptar el encargo · pedir otro</dd>
 			<dt>R</dt><dd>Volver a la calle más cercana</dd>
 			<dt>G</dt><dd>Activar o desactivar los choques</dd>

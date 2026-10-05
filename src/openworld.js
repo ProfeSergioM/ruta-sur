@@ -15,7 +15,7 @@ import { openCity, chunkIndex, buildOpenChunk, groundPlane, hillRing, chunkOf, O
 // numéricas) no hay texturas y las capas quedan de color plano.
 function makeTextures() {
 
-	if ( typeof document === 'undefined' ) return { asphalt: null, sidewalk: null, grass: null, facade: null, dash: null };
+	if ( typeof document === 'undefined' ) return { asphalt: null, sidewalk: null, grass: null, facade: null, windows: null, dash: null };
 	const hash = ( x, y ) => { const s = Math.sin( x * 12.9898 + y * 78.233 ) * 43758.5453; return s - Math.floor( s ); };
 	// paint devuelve la luminancia (en torno a 1) o [ r, g, b, a ] en el mismo rango
 	const make = ( size, paint, h = size ) => {
@@ -79,9 +79,22 @@ function makeTextures() {
 		return 0.32 + 0.12 * ( ( x + y ) % 21 < 6 ? 1 : 0 ) + 0.04 * hash( x, y );
 
 	} );
+	// luces de las ventanas: la misma celda que la fachada, en un patrón de cuatro por cuatro
+	// donde algunas quedan apagadas; se suma a la fachada de noche, así las ventanas brillan
+	// sobre la pared oscura y la transición del crepúsculo es continua
+	const windows = make( 256, ( x, y ) => {
+
+		const cx = x % 64, cy = y % 64, cell = Math.floor( x / 64 ) * 4 + Math.floor( y / 64 );
+		const inGlass = cx >= 23 && cx < 41 && cy >= 19 && cy < 45;
+		if ( ! inGlass ) return 0;
+		const lit = hash( cell + 3, cell * 7 ) < 0.65;
+		return lit ? [ 0.95, 0.8, 0.5, 1 ] : 0;
+
+	} );
+	if ( windows ) windows.repeat.set( 0.25, 0.25 ); // cuatro celdas por lado
 	// línea central discontinua: tramos de 3 m pintados y 3 m sin pintar, como transparencia
 	const dash = make( 8, ( x, y ) => ( y < 32 ? [ 1, 1, 1, 1 ] : [ 1, 1, 1, 0 ] ), 64 );
-	return { asphalt, sidewalk, grass, facade, dash };
+	return { asphalt, sidewalk, grass, facade, windows, dash };
 
 }
 
@@ -107,9 +120,19 @@ export class OpenWorld {
 			ground: layer( 0, T.grass ), buildings: layer( 0, T.facade ), decor: layer( 0 ),
 			park: layer( 1, T.grass ), walk: layer( 2, T.sidewalk ), road: layer( 3, T.asphalt ),
 			line: layer( 4, null, T.dash ? { alphaMap: T.dash, alphaTest: 0.5 } : {} ),
+			// luces de las ventanas: se suman a la fachada; de día no se dibujan
+			windows: new THREE.MeshBasicMaterial( { map: T.windows, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, polygonOffset: true, polygonOffsetFactor: - 1, polygonOffsetUnits: - 2 } ),
+			// las lámparas no llevan el tinte de la noche: de noche se encienden
+			glow: new THREE.MeshBasicMaterial( { vertexColors: true } ),
+			// charcos de luz bajo los faroles: se suman a la calzada, y de día no se dibujan
+			pool: new THREE.MeshBasicMaterial( { vertexColors: true, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, polygonOffset: true, polygonOffsetFactor: - 5, polygonOffsetUnits: - 10 } ),
 			plane: new THREE.MeshBasicMaterial( { vertexColors: true, polygonOffset: true, polygonOffsetFactor: 2, polygonOffsetUnits: 4 } ),
 			hills: new THREE.MeshBasicMaterial( { vertexColors: true } ),
 		};
+		this.materials.pool.visible = false;
+		this.materials.windows.visible = false;
+		this.materials.glow.color.setRGB( 0.75, 0.75, 0.72 );
+		this.lampsOn = false;
 		this.city = null;
 		this.chunks = new Map();   // "i,j" -> { rays (las capas que responden la física), meshes (todas), i, j, cx, cz }
 		this._all = [];
@@ -164,6 +187,17 @@ export class OpenWorld {
 
 		this.city = openCity( this.roadsData || { elements: [] }, this.buildingsData || { elements: [] }, this.geo );
 		chunkIndex( this.city, OPEN.chunk );
+
+	}
+
+	// Segunda malla sobre la misma geometría, con otro material
+	_twin( mesh, material ) {
+
+		const twin = new THREE.Mesh( mesh.geometry, material );
+		twin.matrixAutoUpdate = false;
+		this.group.add( twin );
+		twin.updateWorldMatrix( true );
+		return twin;
 
 	}
 
@@ -222,6 +256,8 @@ export class OpenWorld {
 				if ( ! mesh ) continue;
 				meshes.push( mesh );
 				if ( ray ) rays.push( mesh );
+				// las luces de las ventanas comparten la geometría de los edificios
+				if ( name === 'buildings' ) meshes.push( this._twin( mesh, this.materials.windows ) );
 
 			}
 
@@ -274,6 +310,19 @@ export class OpenWorld {
 	releaseColumn() {}
 	setResolution() {}
 	settle() {}
+
+	// Luz del día: `tint` oscurece la ciudad; `lamps` (0 a 1) enciende faroles, charcos y ventanas
+	setLight( { tint, lamps = 0, level = 1 } ) {
+
+		const M = this.materials;
+		for ( const name of [ 'ground', 'buildings', 'park', 'walk', 'road', 'line', 'decor', 'plane', 'hills' ] ) M[ name ].color.setRGB( tint[ 0 ], tint[ 1 ], tint[ 2 ] );
+		this.lampsOn = lamps > 0;
+		M.glow.color.setRGB( 0.75 + 0.25 * lamps, 0.75 + 0.17 * lamps, 0.72 - 0.02 * lamps );
+		M.pool.visible = M.windows.visible = this.lampsOn;
+		M.pool.opacity = 0.6 * lamps * ( 1 - 0.7 * level );
+		M.windows.opacity = lamps;
+
+	}
 	get stalled() { return 0; }
 	get tileProblem() { return null; }
 	get ready() { return !! this.city && this.pendingNear === 0 && this.chunks.size > 0; }

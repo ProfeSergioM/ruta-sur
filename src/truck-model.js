@@ -140,6 +140,27 @@ export function createTruckModel( spec, name = 'Ruta Sur' ) {
 
 	const exterior = new THREE.Group();
 	cab.add( exterior );
+	// haz de los focos sobre la calzada, delante del camión: se suma a la luz y de día no se ve
+	const beamTex = ( () => {
+
+		const c = document.createElement( 'canvas' ); c.width = 64; c.height = 128;
+		const g = c.getContext( '2d' );
+		const grad = g.createLinearGradient( 0, 0, 0, 128 );
+		grad.addColorStop( 0, 'rgba(255,240,200,0.0)' ); grad.addColorStop( 0.18, 'rgba(255,240,200,0.9)' ); grad.addColorStop( 1, 'rgba(255,240,200,0.0)' );
+		g.fillStyle = grad; g.fillRect( 0, 0, 64, 128 );
+		// más angosto hacia el camión
+		g.globalCompositeOperation = 'destination-in';
+		g.beginPath(); g.moveTo( 26, 128 ); g.lineTo( 38, 128 ); g.lineTo( 64, 0 ); g.lineTo( 0, 0 ); g.closePath(); g.fill();
+		const t = new THREE.CanvasTexture( c ); t.colorSpace = THREE.SRGBColorSpace;
+		return t;
+
+	} )();
+	const beamMat = new THREE.MeshBasicMaterial( { map: beamTex, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, fog: false } );
+	const beam = new THREE.Mesh( new THREE.PlaneGeometry( 9, 26 ), beamMat );
+	beam.rotation.x = - Math.PI / 2;
+	beam.position.set( 0, 0.06, zFront - 13.5 );
+	beam.renderOrder = 2;
+	tractor.add( beam );
 	const cabLen = 2.25, cabTop = 3.5;
 	exterior.add( box( W - 0.04, cabTop - 0.95, cabLen, cabMat, 0, cabY( ( cabTop + 0.95 ) / 2 ), cabZ( zFront + cabLen / 2 ) ) );
 	// parabrisas, ventanas, parrilla y parachoques
@@ -321,6 +342,9 @@ export function createTruckModel( spec, name = 'Ruta Sur' ) {
 		// Vista de cabina: se oculta la cabina exterior y se muestra el interior
 		setCabinView( on ) { interior.visible = on; exterior.visible = ! on; },
 
+		// De noche se encienden los focos: el haz sobre la calzada aparece según cuánta oscuridad haya
+		setNight( darkness ) { beamMat.opacity = Math.max( 0, Math.min( 1, darkness ) ) * 0.85; beam.visible = beamMat.opacity > 0.02; },
+
 		update( t, dt, travel ) {
 
 			tractor.position.set( t.x, t.y, t.z );
@@ -349,6 +373,7 @@ export function createTruckModel( spec, name = 'Ruta Sur' ) {
 
 			root.traverse( o => { if ( o.geometry ) o.geometry.dispose(); } );
 			shadowMat.map.dispose(); shadowMat.dispose();
+			beamTex.dispose(); beamMat.dispose();
 			for ( const m of mirrors ) m.glass.material.dispose();
 
 		},

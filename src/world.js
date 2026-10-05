@@ -573,6 +573,7 @@ export class TestWorld {
 	releaseColumn() {}
 	setResolution() {}
 	settle() { this.pendingFine = 1; }
+	setLight( { tint } ) { this.material.color.setRGB( tint[ 0 ], tint[ 1 ], tint[ 2 ] ); }
 	get stalled() { return 0; }
 	get tileProblem() { return null; }
 	groundNear( x, z, y, above = true ) { return nearRay( this.field, x, z, y, this._all, above ); }

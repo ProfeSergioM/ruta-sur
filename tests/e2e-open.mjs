@@ -140,6 +140,25 @@ await page.keyboard.press( 'KeyC' );
 await sleep( page, 2500 );
 await page.screenshot( { path: `${ SHOTS }/abierto-04-choque.png` } );
 
+// --- día y noche: la hora avanza con el juego, T la adelanta y de noche se encienden las luces
+const day = await page.evaluate( () => { const g = window.__rutaSur, M = g.world.materials; return { hour: g.hour, clock: document.getElementById( 'reloj' ).textContent, lamps: g.world.lampsOn, pool: M.pool.visible, tint: M.road.color.r, windows: M.windows.visible }; } );
+R.check( 'La partida empieza a las 17 y el reloj lo muestra', day.hour > 17 && day.hour < 18 && /^17:/.test( day.clock ), `${ day.clock }` );
+R.check( 'De día las luces están apagadas y la ciudad sin tinte', ! day.lamps && ! day.pool && day.tint > 0.9 && ! day.windows, JSON.stringify( day ) );
+for ( let i = 0; i < 4; i ++ ) { await page.keyboard.press( 'KeyT' ); await sleep( page, 150 ); }
+await sleep( page, 600 );
+const night = await page.evaluate( () => { const g = window.__rutaSur, M = g.world.materials; return { hour: g.hour, clock: document.getElementById( 'reloj' ).textContent, lamps: g.world.lampsOn, pool: M.pool.visible && M.pool.opacity > 0.3, glow: M.glow.color.r > 0.95, tint: M.road.color.r, windows: M.windows.visible && M.windows.opacity > 0.95, sky: g.world.scene.fog.color.r, beam: g.model.root.children[ 0 ].children.some( c => c.material && c.material.blending === 2 && c.visible && c.material.opacity > 0.5 ) }; } );
+R.check( 'Cuatro veces T adelantan a las 21 y es de noche', night.hour >= 21 && night.hour < 22 && /^21:/.test( night.clock ), night.clock );
+R.check( 'De noche se encienden los faroles, sus charcos, las ventanas y los focos del camión, y la ciudad se oscurece', night.lamps && night.pool && night.glow && night.windows && night.tint < 0.4 && night.sky < 0.2 && night.beam, JSON.stringify( night ) );
+await page.keyboard.press( 'KeyC' ); await page.keyboard.press( 'KeyC' ); // exterior
+await sleep( page, 2500 );
+await page.screenshot( { path: `${ SHOTS }/abierto-07-noche.png` } );
+await page.keyboard.press( 'KeyC' ); await sleep( page, 2500 );
+await page.screenshot( { path: `${ SHOTS }/abierto-08-noche-cabina.png` } );
+const dusk = await page.evaluate( () => { const g = window.__rutaSur; g.hour = 19.3; return new Promise( r => setTimeout( () => r( { fog: g.world.scene.fog.color.getHex().toString( 16 ) } ), 400 ) ); } );
+await page.screenshot( { path: `${ SHOTS }/abierto-09-atardecer.png` } );
+R.info( 'Bruma al atardecer', '#' + dusk.fog );
+await page.evaluate( () => { window.__rutaSur.hour = 12; } ); await sleep( page, 400 );
+
 // --- radio: la tecla X recorre las emisoras; la transmisión se simula caída
 const streams = [];
 await page.route( /^https:\/\/(playerservices\.streamtheworld\.com|unlimited\d*-cl\.dps\.live)\//, route => { streams.push( route.request().url() ); route.fulfill( { status: 503, body: 'sin señal' } ).catch( () => {} ); } );

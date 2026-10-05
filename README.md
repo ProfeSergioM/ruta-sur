@@ -30,6 +30,7 @@ En un marco aislado tampoco hay almacenamiento: la caja de los encargos y las ca
 | Q, E o arrastrar | Mirar a los lados |
 | V | Espejos en pantalla: mostrar u ocultar los recuadros |
 | X | Radio: la emisora siguiente (en la pausa se elige una o se pega otra dirección) |
+| T | Adelantar la hora del juego |
 | Enter, N | Aceptar el encargo, pedir otro |
 | R | Volver a la calle más cercana |
 | G | Activar o desactivar los choques |
@@ -53,6 +54,7 @@ La primera versión pedía las bibliotecas y las tipografías a servidores exter
 | `geo.js` | Conversión entre latitud y longitud y las coordenadas del juego (WGS84) |
 | `truck-model.js`, `hud.js`, `audio.js`, `input.js` | Modelo 3D del camión, tablero y minimapa, sonido sintetizado, teclado, táctil y mando |
 | `radio.js` | Radios chilenas por internet: lista de emisoras, reproducción con el elemento de audio y una dirección propia |
+| `daylight.js` | Ciclo de día y noche: nivel de luz, colores del cielo y la bruma, tinte de la ciudad, sol y luces encendidas según la hora. No depende de Three.js |
 | `mirrors.js` | Espejos retrovisores: una cámara por espejo dibuja en una textura que va en el vidrio de la cabina y en los recuadros de la pantalla |
 | `openmap.js` | Mapa abierto: convierte las calles y los edificios de OpenStreetMap en franjas de asfalto con vereda y prismas de colores, por trozos. Triangula las plantas por recorte de orejas. No depende de Three.js |
 | `openworld.js` | El mundo del mapa abierto: pide calles y edificios a Overpass, levanta los trozos alrededor del camión y responde los rayos de la física |
@@ -66,6 +68,10 @@ Convención de ejes: +X al oeste, +Y arriba, +Z al norte, con origen en el punto
 ### Mapa abierto
 
 El mundo principal del juego no usa fotografía. Las calles salen de la misma consulta a Overpass que la red vial, y se dibujan como franjas de asfalto con una vereda a cada lado y el ancho típico de su clase (una residencial, 7 m; una primaria, 10 m). Los edificios salen de una segunda consulta, de las vías cerradas con etiqueta `building` en 1,5 km alrededor del punto elegido, y se extruyen desde su planta: con la altura que OSM declare (`height`), o con los pisos (`building:levels`, a 3,2 m cada uno), o con una altura típica de su tipo (una casa, 5,5 m; un edificio de departamentos, 15 m), dispersa un poco para que una cuadra no salga pareja. Las plantas cóncavas se triangulan por recorte de orejas. El suelo es plano. Todo se arma por trozos de 120 m alrededor del camión, con un BVH por trozo para la física, y los trozos lejanos se liberan. Los edificios se guardan en el navegador dos semanas, como las calles.
+
+### Día y noche
+
+La partida empieza a las 17:00 y el reloj del tablero avanza una hora del juego por cada minuto de reloj (la tecla T adelanta una hora). El sol sale a las 6:30 y se pone a las 19:30. Con la hora cambian el cielo y la bruma (naranja en el crepúsculo, azul oscuro de noche), la fuerza del sol sobre el camión y un tinte que oscurece la ciudad. Al crepúsculo se encienden las luces, poco a poco y sin saltos: los faroles brillan y dejan charcos de luz sobre la calzada, las ventanas se encienden en un patrón de cuatro por cuatro celdas con algunas apagadas (una capa de luz que se suma a la fachada, con la misma geometría), y el camión prende los focos, que dibujan un haz sobre la calzada por delante. Todo sale de `daylight.js`, una función pura de la hora, que las pruebas numéricas recorren hora a hora. El ciclo corre igual en la ciudad de pruebas, sin faroles.
 
 ### Radio
 
@@ -94,8 +100,8 @@ La red vial sale de la misma consulta a OpenStreetMap. Con ella el juego elige d
 
 ```
 npm install
-npm test          # pruebas numéricas, sin navegador (286 comprobaciones)
-npm run e2e       # el juego completo en Chromium sin interfaz, 167 comprobaciones (necesita: npm i -D playwright)
+npm test          # pruebas numéricas, sin navegador (299 comprobaciones)
+npm run e2e       # el juego completo en Chromium sin interfaz, 171 comprobaciones (necesita: npm i -D playwright)
 ```
 
 Las pruebas numéricas cubren el modelo del camión (radios de giro contra la teoría, corredor de giro de la norma europea, aceleración, frenado, pendientes, caja de cambios, bajadas, choques frontales y laterales), la geodesia, la red vial, el mapa abierto (triangulación, prismas, trozos, memoria de edificios) y los encargos. `tests/osm-real.test.mjs` usa una muestra real del centro de Temuco (`tests/fixtures/temuco-centro.json`, © OpenStreetMap contributors, ODbL). El entorno de desarrollo no llega a Overpass, así que no hay una muestra real de edificios: `tests/open-fixture.mjs` reparte plantas sintéticas en las manzanas de esa muestra, con las etiquetas que usa el juego.
@@ -152,6 +158,11 @@ Verificado solo contra simulaciones:
 El código de Ruta Sur se publica bajo la licencia MIT (ver `LICENSE`). Las obras incluidas conservan sus propias licencias, listadas arriba.
 
 ## Cambios
+
+**0.8.0**
+
+- Ciclo de día y noche: reloj en el tablero, tecla T para adelantar la hora, cielo y bruma según la hora, y de noche faroles encendidos con charcos de luz, ventanas iluminadas y focos del camión.
+- La versión se muestra en la pantalla inicial, y el armado publica `docs/version.json` para que la portada del sitio la lea.
 
 **0.7.0**
 

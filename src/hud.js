@@ -59,6 +59,7 @@ export class Hud {
 	}
 
 	setRpmHigh( on ) { this.rpmBar.classList.toggle( 'alto', on ); }
+	setClock( text ) { this.text( 'reloj', text ); }
 
 	setJob( j ) {
 
