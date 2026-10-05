@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Ruta Sur</title>
-<meta name="description" content="Simulador de camiones sobre la malla 3D fotorrealista de Google.">
+<meta name="description" content="Simulador de camiones por las calles y los edificios de OpenStreetMap.">
 <!--__AVISOS__-->
 <style>
 /* Señalética de ruta: paneles de asfalto, verde de señal informativa y ámbar de tablero. */
@@ -195,9 +195,9 @@ legend { font: 800 12px/1 var(--f-senal); letter-spacing: 0.14em; text-transform
 #aviso.alerta { background: var(--rojo); border-color: var(--linea); }
 #aviso.logro { background: var(--senal); border-color: var(--linea); }
 
-/* atribuciones: obligatorias al mostrar datos de Google Maps Platform */
+/* atribución de los datos del mapa */
 #atribucion { position: absolute; left: 10px; right: 10px; bottom: max( 6px, env( safe-area-inset-bottom, 0px ) ); display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; font: 400 11px/1.25 var(--f-senal); color: #fff; text-shadow: 0 0 3px #000, 0 0 2px #000, 0 1px 1px #000; }
-#atribucion .google { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+#atribucion .datos { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
 #atribucion .logo { font: 600 14px/1 var(--f-senal); white-space: nowrap; }
 #atribucion .fuentes { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 #atribucion .via { white-space: nowrap; opacity: 0.9; }
@@ -369,7 +369,7 @@ html:not( .js ) #menu, html:not( .js ) #view { display: none; }
 	// --- errores ---------------------------------------------------------------
 	// El informe está hecho para compartirse, así que no lleva datos de la persona:
 	//  - las direcciones se reducen al nombre del archivo (una ruta local puede llevar su nombre);
-	//  - se quitan los parámetros de las direcciones y las credenciales del mapa.
+	//  - se quitan los parámetros de las direcciones y lo que parezca una clave o un token.
 	function limpiar( t ) {
 
 		return String( t )
@@ -585,7 +585,7 @@ html:not( .js ) #menu, html:not( .js ) #view { display: none; }
 	</div>
 
 	<div id="atribucion">
-		<div class="google"><span class="logo" id="a-logo"></span><span class="fuentes" id="a-fuentes"></span></div>
+		<div class="datos"><span class="logo" id="a-logo"></span><span class="fuentes" id="a-fuentes"></span></div>
 		<span class="via" id="a-via"></span>
 	</div>
 </div>
@@ -595,7 +595,7 @@ html:not( .js ) #menu, html:not( .js ) #view { display: none; }
 		<!-- No es un <form>: un marco aislado sin permiso de formularios bloquea el envío y el botón quedaría sin efecto. -->
 		<div class="senal" id="formulario" role="form" aria-label="Preparar la partida">
 			<div class="marca"><div class="escudo" aria-hidden="true">RS</div><h1>Ruta Sur</h1></div>
-			<p class="bajada">Conduce un camión por las calles de una ciudad real: sobre la malla 3D fotorrealista de Google, o sobre el mapa abierto de OpenStreetMap.</p>
+			<p class="bajada">Conduce un camión por las calles verdaderas de una ciudad, levantadas desde OpenStreetMap, y reparte cargas entre esquinas.</p>
 
 			<fieldset>
 				<legend>Ciudad</legend>
@@ -613,37 +613,20 @@ html:not( .js ) #menu, html:not( .js ) #view { display: none; }
 				<div class="fichas" id="calidades"></div>
 			</fieldset>
 
-			<fieldset>
-				<legend>Credencial del mapa</legend>
-				<input class="campo" id="credencial" type="password" placeholder="Token de Cesium ion o clave de Google Maps Platform" aria-describedby="credencial-nota" spellcheck="false" autocomplete="off">
-				<p class="nota" id="credencial-nota">Se guarda solo en este navegador.</p>
-			</fieldset>
-
 			<p class="nota error" id="menu-error" role="alert" hidden></p>
 
 			<div class="acciones">
 				<button class="boton" type="button" id="conducir">Conducir</button>
-				<button class="boton secundario" type="button" id="abierto">Mapa abierto (OpenStreetMap), sin credencial</button>
-				<button class="boton secundario" type="button" id="pista">Ciudad de pruebas, sin credencial</button>
+				<button class="boton secundario" type="button" id="pista">Ciudad de pruebas, sin conexión</button>
 			</div>
 			<p class="nota marco" id="marco-nota" hidden></p>
 		</div>
 
 		<aside>
 			<div class="aviso">
-				<h2>Sin credencial</h2>
-				<p>El <strong>mapa abierto</strong> levanta las calles y los edificios de OpenStreetMap como cajas de colores, sobre un suelo plano: sirve para repartir encargos por las calles verdaderas de la ciudad elegida. La <strong>ciudad de pruebas</strong> es una ciudad generada que funciona sin conexión.</p>
-			</div>
-			<div class="aviso">
-				<h2>Cómo conseguir la credencial</h2>
-				<p><strong>Cesium ion</strong>, gratis para uso personal y sin tarjeta:</p>
-				<ol>
-					<li>Crea una cuenta en <a href="https://ion.cesium.com/tokens" target="_blank" rel="noopener">ion.cesium.com</a>.</li>
-					<li>En <em>Access Tokens</em>, copia el token por defecto.</li>
-					<li>Pégalo en el campo de credencial.</li>
-				</ol>
-				<p><strong>Google Maps Platform</strong>, con cuenta de facturación: habilita la <a href="https://developers.google.com/maps/documentation/tile/get-api-key" target="_blank" rel="noopener">Map Tiles API</a> y crea una clave<span id="clave-nota"> sin restricción de sitio web, porque el juego se abre como archivo local</span>.</p>
-				<p class="dato" id="sesiones"></p>
+				<h2>Dos mundos</h2>
+				<p><strong>Conducir</strong> pide a OpenStreetMap las calles y los edificios de la ciudad elegida y los levanta como franjas de asfalto y cajas de colores sobre un suelo plano. Necesita internet la primera vez; después queda guardado en este navegador dos semanas. Datos © OpenStreetMap contributors, ODbL.</p>
+				<p>La <strong>ciudad de pruebas</strong> es una ciudad generada en el momento: sirve para conocer los controles y funciona sin conexión.</p>
 			</div>
 			<div class="aviso">
 				<h2>Controles</h2>

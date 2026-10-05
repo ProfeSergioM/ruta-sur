@@ -1,10 +1,10 @@
 // Ruta Sur · mapa abierto
 // --------------------------------------------------------------------------
-// Una ciudad levantada desde OpenStreetMap, sin credencial: las calles como
+// Una ciudad levantada desde OpenStreetMap: las calles como
 // franjas de asfalto con vereda, y los edificios como prismas de colores
 // extruidos desde su planta, con la altura que OSM declare o una típica de su
 // tipo. No hay fotografía ni relieve: el suelo es plano. Sirve para repartir
-// encargos por las calles verdaderas de una ciudad sin pagar teselas.
+// encargos por las calles verdaderas de una ciudad.
 //
 // El módulo es puro (no depende de Three.js): recibe las respuestas de Overpass
 // ya convertidas a coordenadas del juego y entrega mallas por trozos, en el

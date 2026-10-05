@@ -1,9 +1,9 @@
 // Ruta Sur · red vial de OpenStreetMap
 // --------------------------------------------------------------------------
-// La malla de Google trae forma y textura, pero no sabe qué es una calle. La
-// red vial sale de OpenStreetMap (API Overpass): con ella se elige dónde
+// La red vial sale de OpenStreetMap (API Overpass): con ella se elige dónde
 // aparece el camión, se generan destinos alcanzables, se calcula la ruta y se
-// dibuja el minimapa. Este módulo no depende de Three.js.
+// dibuja el minimapa. También se piden aquí los edificios del mapa abierto.
+// Este módulo no depende de Three.js.
 
 // Clases de vía que un camión puede usar, con su ancho en el minimapa y el
 // factor de costo para la ruta (un camión prefiere las vías principales).

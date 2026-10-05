@@ -1,10 +1,9 @@
 // Arma el juego en un solo archivo HTML que no depende de ningún otro.
 //
-// Dentro del archivo quedan: los módulos de src/, las bibliotecas (Three.js,
-// 3d-tiles-renderer y three-mesh-bvh), el decodificador Draco de las teselas y las
-// dos tipografías. Al abrirlo, el navegador no pide nada a internet. La red se usa
-// recién al conducir sobre el mapa real: las teselas (Google o Cesium ion) y las
-// calles (Overpass).
+// Dentro del archivo quedan: los módulos de src/, las bibliotecas (Three.js y
+// three-mesh-bvh) y las dos tipografías. Al abrirlo, el navegador no pide nada a
+// internet. La red se usa recién al conducir por el mapa abierto: las calles y los
+// edificios (Overpass).
 //
 // La razón: un archivo que pide sus bibliotecas a una CDN deja de funcionar donde
 // esos pedidos están bloqueados, como la vista previa de una aplicación.
@@ -25,27 +24,6 @@ const VERSION = JSON.parse( readFileSync( resolve( root, 'package.json' ), 'utf8
 // Lo que este script afirma sobre un paquete se comprueba contra los archivos del paquete.
 const expect = ( file, text ) => { if ( ! readFileSync( file, 'utf8' ).includes( text ) ) throw new Error( `${ file } ya no contiene "${ text }": revisa tools/build.mjs` ); };
 
-// --- decodificador Draco (variante glTF, la que usan las teselas) ---------------
-const dracoWrapper = readFileSync( mod( 'three/examples/jsm/libs/draco/gltf/draco_wasm_wrapper.js' ), 'utf8' );
-const dracoWasm = readFileSync( mod( 'three/examples/jsm/libs/draco/gltf/draco_decoder.wasm' ) );
-
-// src/embebidos.js declara el contrato con el decodificador vacío; aquí se llena.
-const embed = {
-	name: 'embebidos',
-	setup( b ) {
-
-		b.onLoad( { filter: /[\\/]src[\\/]embebidos\.js$/ }, args => {
-
-			const source = readFileSync( args.path, 'utf8' );
-			const hole = 'export const DRACO = null;';
-			if ( ! source.includes( hole ) ) throw new Error( 'src/embebidos.js ya no declara "export const DRACO = null;"' );
-			return { loader: 'js', contents: source.replace( hole, () => `export const DRACO = { wrapper: ${ JSON.stringify( dracoWrapper ) }, wasm: ${ JSON.stringify( dracoWasm.toString( 'base64' ) ) } };` ) };
-
-		} );
-
-	},
-};
-
 // --- programa -------------------------------------------------------------------
 const result = await build( {
 	entryPoints: [ resolve( root, 'src/main.js' ) ],
@@ -57,21 +35,13 @@ const result = await build( {
 	charset: 'utf8',
 	minify: true,
 	legalComments: 'none', // los avisos de las bibliotecas van aparte, completos (ver más abajo)
-	plugins: [ embed ],
-	// DRACOLoader arma direcciones por defecto a partir de la del módulo. Dentro de una
-	// página abierta como blob: o data:, esa dirección no sirve de base y el programa
-	// se detendría al cargar. Se fija la dirección que el módulo tiene en la CDN.
-	define: {
-		'import.meta.url': JSON.stringify( `https://cdn.jsdelivr.net/npm/three@${ three.version }/examples/jsm/loaders/DRACOLoader.js` ),
-		__RS_VERSION__: JSON.stringify( VERSION ),
-	},
+	define: { __RS_VERSION__: JSON.stringify( VERSION ) },
 } );
 
 const code = result.outputFiles[ 0 ].text;
 // Dentro de un <script>, estas dos secuencias cortan o confunden el programa.
 if ( /<\/script/i.test( code ) ) throw new Error( 'El código contiene "</script": no se puede insertar en el HTML' );
 if ( code.includes( '<!--' ) ) throw new Error( 'El código contiene "<!--": no se puede insertar en el HTML' );
-if ( ! code.includes( `three@${ three.version }/examples/jsm/libs/draco/gltf/` ) ) throw new Error( `src/world.js apunta a otra versión de Three.js que la instalada (${ three.version })` );
 
 // --- tipografías ----------------------------------------------------------------
 // Variables y solo con el juego de caracteres latino: dos archivos cubren todos los pesos.
@@ -87,17 +57,14 @@ const fonts = [
 ].map( f => ( { familia: f.familia, peso: f.peso, rango: f.rango, datos: readFileSync( f.file ).toString( 'base64' ) } ) );
 
 // --- avisos de las obras incluidas ----------------------------------------------
-const tiles = pkg( '3d-tiles-renderer' ), bvh = pkg( 'three-mesh-bvh' ), overpass = pkg( '@fontsource-variable/overpass' ), mono = pkg( '@fontsource-variable/overpass-mono' );
+const bvh = pkg( 'three-mesh-bvh' ), overpass = pkg( '@fontsource-variable/overpass' ), mono = pkg( '@fontsource-variable/overpass-mono' );
 const works = [
 	`Three.js ${ three.version } (MIT). Copyright © 2010-2026 three.js authors. https://threejs.org`,
-	`3d-tiles-renderer ${ tiles.version } (Apache-2.0). Copyright 2020 California Institute of Technology. https://github.com/NASA-AMMOS/3DTilesRendererJS`,
 	`three-mesh-bvh ${ bvh.version } (MIT). Copyright (c) 2018 Garrett Johnson. https://github.com/gkjohnson/three-mesh-bvh`,
-	`Draco, decodificador glTF distribuido con Three.js ${ three.version } (Apache-2.0). https://github.com/google/draco`,
 	`Overpass y Overpass Mono, vía Fontsource ${ overpass.version } y ${ mono.version } (SIL OFL 1.1). Copyright 2021 The Overpass Project Authors. https://github.com/RedHatOfficial/Overpass`,
 ];
 // las líneas de derechos citadas arriba se comprueban contra los archivos de cada paquete
 expect( mod( 'three/LICENSE' ), 'Copyright © 2010-2026 three.js authors' );
-expect( mod( '3d-tiles-renderer/LICENSE' ), 'Copyright 2020 California Institute of Technology' );
 expect( mod( 'three-mesh-bvh/LICENSE' ), 'Copyright (c) 2018 Garrett Johnson' );
 expect( mod( '@fontsource-variable/overpass/LICENSE' ), 'Copyright 2021 The Overpass Project Authors' );
 
@@ -109,7 +76,6 @@ Los textos de las licencias están al final del archivo.
 const licenses = [
 	[ 'Three.js · licencia MIT', mod( 'three/LICENSE' ) ],
 	[ 'three-mesh-bvh · licencia MIT', mod( 'three-mesh-bvh/LICENSE' ) ],
-	[ '3d-tiles-renderer y Draco · Apache License 2.0', mod( '3d-tiles-renderer/LICENSE' ) ],
 	[ 'Overpass y Overpass Mono · SIL Open Font License 1.1', mod( '@fontsource-variable/overpass/LICENSE' ) ],
 ].map( ( [ title, file ] ) => `${ '='.repeat( 78 ) }\n${ title }\n${ '='.repeat( 78 ) }\n${ readFileSync( file, 'utf8' ).trim() }` ).join( '\n\n' );
 if ( /<\/script/i.test( licenses ) ) throw new Error( 'Un texto de licencia contiene "</script"' );
@@ -137,4 +103,4 @@ if ( external.length || /type\s*=\s*["']?importmap/i.test( html ) ) throw new Er
 mkdirSync( dirname( out ), { recursive: true } );
 writeFileSync( out, html );
 writeFileSync( resolve( dirname( out ), '.nojekyll' ), '' ); // GitHub Pages: servir los archivos tal cual, sin pasar por Jekyll
-console.log( `docs/index.html · ${ KB( Buffer.byteLength( html ) ) } en total: programa ${ KB( Buffer.byteLength( code ) ) } (con Draco ${ KB( dracoWrapper.length + dracoWasm.length * 4 / 3 ) }), tipografías ${ KB( fonts.reduce( ( a, f ) => a + f.datos.length, 0 ) ) }, licencias ${ KB( licenses.length ) }` );
+console.log( `docs/index.html · ${ KB( Buffer.byteLength( html ) ) } en total: programa ${ KB( Buffer.byteLength( code ) ) }, tipografías ${ KB( fonts.reduce( ( a, f ) => a + f.datos.length, 0 ) ) }, licencias ${ KB( licenses.length ) }` );

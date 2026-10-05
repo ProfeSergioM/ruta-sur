@@ -64,7 +64,6 @@ const menu = frame => game( frame, () => ( {
 	avisoFijo: getComputedStyle( document.getElementById( 'sin-motor' ) ).display,
 	falla: ! document.getElementById( 'falla' ).hidden,
 	marco: document.getElementById( 'marco-nota' ).hidden ? '' : document.getElementById( 'marco-nota' ).textContent,
-	credencial: document.getElementById( 'credencial-nota' ).textContent,
 	fuentes: [ ...document.fonts ].map( f => `${ f.family } ${ f.status }` ).join( ', ' ),
 	overpass: document.fonts.check( '16px Overpass' ) && document.fonts.check( '16px "Overpass Mono"' ),
 } ) );
@@ -97,7 +96,6 @@ if ( run( 'estricta' ) ) {
 	R.check( 'Sin avisos de falla a la vista', m.avisoFijo === 'none' && ! m.falla );
 	R.check( 'Las tipografías incluidas se instalan aunque la política prohíba cargar tipografías', m.overpass, m.fuentes );
 	R.check( 'La pantalla inicial avisa que está dentro de otra aplicación y qué hacer para el mapa real', /dentro de otra aplicación/.test( m.marco ) && /ciudad de pruebas funciona/.test( m.marco ) && /Chrome o Edge/.test( m.marco ), m.marco.slice( 0, 60 ) + '…' );
-	R.check( 'Sin almacenamiento, la nota de la credencial lo dice', /no guarda datos/.test( m.credencial ), m.credencial );
 	await page.screenshot( { path: `${ SHOTS }/vista-previa-01-inicio.png` } );
 
 	// --- la ciudad de pruebas se maneja dentro de la vista
@@ -127,21 +125,20 @@ if ( run( 'estricta' ) ) {
 	await game( frame, () => { delete document.hasFocus; } );
 	R.check( 'Si el marco pierde el foco del teclado, el juego dice cómo recuperarlo', ! /clic sobre el juego/.test( quiet ) && /Haz clic sobre el juego/.test( hint ) && await game( frame, () => document.hasFocus() ), hint || `sin aviso (${ await game( frame, () => window.__rutaSur.perf.fps.toFixed( 1 ) ) } c/s)` );
 
-	// --- el mapa real necesita red: la vista lo bloquea y el juego lo explica
+	// --- el mapa abierto necesita red: la vista lo bloquea y el juego lo explica
 	await page.keyboard.press( 'Escape' );
 	await frame.click( '#salir' );
-	await frame.fill( '#credencial', 'AIza' + 'x'.repeat( 35 ) );
 	await frame.click( '#conducir' );
 	let text = '';
 	for ( let i = 0; i < 120; i ++ ) { text = await game( frame, () => document.getElementById( 'carga' ).dataset.estado === 'error' ? document.getElementById( 'carga-texto' ).textContent : '' ); if ( text ) break; await sleep( page, 250 ); }
 	const title = await game( frame, () => document.getElementById( 'carga-titulo' ).textContent );
-	R.check( 'Al pedir el mapa real, el juego explica que la vista bloquea la conexión y cómo abrirlo', /bloquea la conexión/.test( text ) && /ábrelo con doble clic en Chrome o Edge/.test( text ) && /Ruta cortada/i.test( title ), text );
+	R.check( 'Al pedir el mapa abierto, el juego explica que la vista bloquea la conexión y cómo abrirlo', /bloquea la conexión con OpenStreetMap/.test( text ) && /ábrelo con doble clic en Chrome o Edge/.test( text ) && /Ruta cortada/i.test( title ), text );
 	await page.screenshot( { path: `${ SHOTS }/vista-previa-03-mapa-bloqueado.png` } );
 	// los únicos errores de consola son los rechazos que anota el navegador por la política de la vista
 	const own = log.errors.filter( e => ! /Content Security Policy|Refused to connect|Failed to fetch|net::ERR_/i.test( e ) );
 	m = await menu( frame );
 	R.check( 'El bloqueo no produce errores propios ni abre el informe de falla', own.length === 0 && ! m.falla, own.slice( 0, 3 ).join( ' | ' ) || `${ log.errors.length } rechazos anotados por el navegador` );
-	R.check( 'Ningún pedido salió hacia los servicios de mapas', outside( log ).length === 0, outside( log ).slice( 0, 3 ).join( ' ' ) || '0 pedidos' );
+	R.check( 'Ningún pedido salió hacia OpenStreetMap', outside( log ).length === 0, outside( log ).slice( 0, 3 ).join( ' ' ) || '0 pedidos' );
 	await frame.click( '#carga-volver' );
 	R.check( 'Volver regresa a la pantalla inicial', ( await menu( frame ) ).estado === 'menu' );
 	await browser.close();
@@ -253,21 +250,19 @@ for ( const how of [ 'blob', 'srcdoc' ] ) {
 }
 
 // ---------------------------------------------------------------------------
-// 3. Marco con salida a la red: el mapa real debe seguir funcionando
+// 3. Marco con salida a la red: la respuesta de OpenStreetMap se explica
 // ---------------------------------------------------------------------------
 if ( run( 'abierta' ) ) {
 
 	console.log( '\n# Marco aislado con salida a la red' );
 	const { browser, page, frame, log } = await open( {} );
-	// el servicio de mapas responde como ante una clave que no reconoce
+	// OpenStreetMap responde con un error del servicio
 	let asked = 0;
-	await page.route( 'https://tile.googleapis.com/**', r => { asked ++; r.fulfill( { status: 400, contentType: 'application/json', body: '{"error":{"code":400,"message":"API key not valid."}}', headers: { 'access-control-allow-origin': '*' } } ); } );
-	await page.route( /https:\/\/overpass[^/]*\/api\/interpreter.*/, r => r.fulfill( { status: 200, contentType: 'application/json', body: '{"elements":[]}', headers: { 'access-control-allow-origin': '*' } } ) );
-	await frame.fill( '#credencial', 'AIza' + 'x'.repeat( 35 ) );
+	await page.route( /https:\/\/overpass[^/]*\/api\/interpreter.*/, r => { asked ++; r.fulfill( { status: 504, body: 'timeout', headers: { 'access-control-allow-origin': '*' } } ); } );
 	await frame.click( '#conducir' );
 	let text = '';
 	for ( let i = 0; i < 120; i ++ ) { text = await game( frame, () => document.getElementById( 'carga' ).dataset.estado === 'error' ? document.getElementById( 'carga-texto' ).textContent : '' ); if ( text ) break; await sleep( page, 250 ); }
-	R.check( 'Sin política que lo impida, el pedido llega al servicio y su respuesta se explica', asked >= 1 && /400/.test( text ) && ! /bloquea/.test( text ), `${ asked } pedidos: ${ text }` );
+	R.check( 'Sin política que lo impida, el pedido llega al servicio y su respuesta se explica', asked >= 1 && /504/.test( text ) && ! /bloquea/.test( text ), `${ asked } pedidos: ${ text }` );
 	await browser.close();
 
 }

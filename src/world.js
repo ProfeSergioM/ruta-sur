@@ -1,57 +1,20 @@
 // Ruta Sur · el mundo
 // --------------------------------------------------------------------------
 // Dos mundos con la misma interfaz:
-//   TilesWorld  la malla fotorrealista de Google (Photorealistic 3D Tiles),
-//               servida por Cesium ion o directamente por Google Maps Platform
-//   TestWorld   la ciudad de pruebas, generada en el navegador
+//   OpenWorld   el mapa abierto, levantado desde OpenStreetMap (openworld.js)
+//   TestWorld   la ciudad de pruebas, generada en el navegador (aquí)
 //
 // Ambos ofrecen `terrain` (lo que consulta la física), `groundAt` (un rayo
 // largo para ubicar el suelo al aparecer), la red vial y el texto de atribución.
+// Este módulo trae además lo que comparten: los rayos contra las mallas, las
+// consultas a Overpass con su memoria local y la detección de una vista que
+// bloquea la red.
 
 import * as THREE from 'three';
-import { TilesRenderer } from '3d-tiles-renderer';
-import {
-	GoogleCloudAuthPlugin, CesiumIonAuthPlugin, GLTFExtensionsPlugin, TilesFadePlugin,
-	ReorientationPlugin, LoadRegionPlugin, SphereRegion, RayRegion,
-} from '3d-tiles-renderer/plugins';
-import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { MeshBVH } from 'three-mesh-bvh';
 import { Geo } from './geo.js';
 import { overpassQuery, buildingsQuery, OVERPASS_ENDPOINTS } from './osm.js';
 import { generateCity, buildRegion, cityChunks, cityRoadsOSM, CITY_START } from './testcity.js';
-import { DRACO, bytesFromBase64 } from './embebidos.js';
-
-// Solo para los módulos usados sueltos: el archivo armado trae el decodificador adentro.
-const DRACO_PATH = 'https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/libs/draco/gltf/';
-
-// El decodificador Draco viaja dentro del archivo del juego. DRACOLoader pide sus dos
-// partes con este método (el envoltorio de JavaScript como texto y el binario
-// WebAssembly como bytes): aquí se entregan desde la memoria, sin pedido de red.
-class EmbeddedDRACOLoader extends DRACOLoader {
-
-	constructor( parts ) { super(); this._parts = parts; }
-
-	_loadLibrary( url, responseType ) {
-
-		// sin WebAssembly la biblioteca pide el decodificador de JavaScript puro, que no va incluido
-		if ( /draco_decoder\.js$/.test( String( url ) ) ) return super._loadLibrary( DRACO_PATH + 'draco_decoder.js', responseType );
-		return Promise.resolve( responseType === 'arraybuffer' ? bytesFromBase64( this._parts.wasm ).buffer : this._parts.wrapper );
-
-	}
-
-}
-
-// Un solo decodificador Draco para toda la vida de la página. La librería comparte
-// entre todos sus TilesRenderer la cola de decodificación; si al salir de una
-// partida se terminaran los procesos del decodificador con mallas a medio decodificar,
-// esas promesas quedarían sin resolver y ocuparían para siempre un cupo de la cola.
-let _draco = null;
-function sharedDraco() {
-
-	if ( ! _draco ) _draco = DRACO ? new EmbeddedDRACOLoader( DRACO ) : new DRACOLoader().setDecoderPath( DRACO_PATH );
-	return _draco;
-
-}
 
 // ---------------------------------------------------------------------------
 // Conexiones que la vista no deja salir
@@ -89,45 +52,16 @@ export function viewBlocks( ...suffixes ) {
 // ¿El juego está dentro de un marco de otra página?
 export const EMBEDDED = ( () => { try { return typeof window !== 'undefined' && !! window.top && window.top !== window.self; } catch ( e ) { return true; } } )();
 
-const MAP_HOSTS = [ 'googleapis.com', 'cesium.com' ];
 export const BLOCKED_ADVICE = 'Guarda el archivo ruta-sur.html en tu computador y ábrelo con doble clic en Chrome o Edge.';
 
-// Renovación de la sesión de Google (ocurre sola cuando el servicio responde 4xx,
-// por ejemplo al vencer la sesión tras unas horas). Dos resguardos sobre la librería:
-//  - la renovación no hereda la señal de cancelación de la tesela que la gatilló;
-//  - si falla, se puede volver a intentar (la librería dejaba guardada la promesa
-//    rechazada y, desde ahí, ninguna tesela volvía a cargar).
-// `onRenew` avisa de cada sesión nueva, que el servicio cobra como un pedido raíz.
-export function hardenSession( auth, onRenew ) {
-
-	if ( ! auth || auth._rutaSur || typeof auth.refreshToken !== 'function' ) return;
-	auth._rutaSur = true;
-	const original = auth.refreshToken.bind( auth );
-	auth.refreshToken = options => {
-
-		const fresh = auth._tokenRefreshPromise === null;
-		const { signal, ...rest } = options || {}; // eslint-disable-line no-unused-vars
-		const p = original( rest );
-		if ( fresh && p && typeof p.then === 'function' ) {
-
-			p.then( () => { if ( onRenew ) onRenew(); }, () => { if ( auth._tokenRefreshPromise === p ) auth._tokenRefreshPromise = null; } );
-
-		}
-
-		return p;
-
-	};
-
-}
-const ION_GOOGLE_ASSET = 2275207; // Google Photorealistic 3D Tiles en Cesium ion
 const DEG = Math.PI / 180;
-const IDLE_TIME = 0.4;           // sin descargas pendientes durante este tiempo, la carga está en reposo [s]
 
+// far: alcance de la vista [m]; pixelRatio: tope de densidad de píxeles;
 // mirror: ancho de la textura de cada espejo [px]; mirrorBoth: los dos espejos en cada cuadro (si no, uno por cuadro)
 export const QUALITY = {
-	baja: { label: 'Baja', errorTarget: 30, far: 2500, pixelRatio: 1, fade: false, cacheGB: 0.6, mirror: 128, mirrorBoth: false },
-	media: { label: 'Media', errorTarget: 20, far: 4000, pixelRatio: 1.5, fade: true, cacheGB: 0.8, mirror: 192, mirrorBoth: false },
-	alta: { label: 'Alta', errorTarget: 13, far: 6000, pixelRatio: 2, fade: true, cacheGB: 1.2, mirror: 256, mirrorBoth: true },
+	baja: { label: 'Baja', far: 2500, pixelRatio: 1, mirror: 128, mirrorBoth: false },
+	media: { label: 'Media', far: 4000, pixelRatio: 1.5, mirror: 192, mirrorBoth: false },
+	alta: { label: 'Alta', far: 6000, pixelRatio: 2, mirror: 256, mirrorBoth: true },
 };
 
 // ---------------------------------------------------------------------------
@@ -532,350 +466,12 @@ export async function fetchBuildings( lat, lon, radius = 1500 ) {
 }
 
 // ---------------------------------------------------------------------------
-// Región de carga alrededor del camión
-// ---------------------------------------------------------------------------
-// La cámara decide el detalle de lo que se ve, pero la física necesita el suelo
-// con el máximo detalle bajo el camión, incluso detrás de la cabina. Esta
-// región pide esas teselas aunque estén fuera de la vista.
-class NearRegion extends SphereRegion {
-
-	// con radio cero la región está apagada (una esfera de radio cero todavía toca las teselas que contienen su centro)
-	intersectsTile( boundingVolume, tile, tiles ) { return this.sphere.radius > 0 && super.intersectsTile( boundingVolume, tile, tiles ); }
-	calculateDistance( boundingVolume ) { return boundingVolume.distanceToPoint( this.sphere.center ); }
-
-}
-
-// Columna vertical: pide el máximo detalle en las teselas que cruza. El rayo
-// atraviesa el planeta, así que se limita a las teselas cercanas al punto.
-class ColumnRegion extends RayRegion {
-
-	constructor( options ) {
-
-		super( options );
-		this.anchor = new THREE.Vector3();
-		this.enabled = false;
-
-	}
-
-	intersectsTile( boundingVolume ) {
-
-		return this.enabled && boundingVolume.intersectsRay( this.ray ) && boundingVolume.distanceToPoint( this.anchor ) < 30000;
-
-	}
-
-	calculateDistance() { return 0; }
-
-}
-
-// ---------------------------------------------------------------------------
-// Mundo de teselas 3D
-// ---------------------------------------------------------------------------
-export class TilesWorld {
-
-	/**
-	 * credential: { type: 'ion' | 'google' | 'url', value }
-	 */
-	constructor( { scene, camera, renderer, credential, lat, lon, quality = QUALITY.media, onSession = null } ) {
-
-		this.kind = 'tiles';
-		this.onSession = credential.type === 'url' ? null : onSession; // aviso de cada sesión de mapa abierta
-		this.scene = scene; this.camera = camera; this.renderer = renderer;
-		this.credential = credential;
-		this.quality = quality;
-		this.geo = new Geo( lat, lon, 0 );
-		this.field = new RayField();
-		this.field.unlimited = true;
-		this.terrain = makeTerrain( this.field );
-		this.rootLoaded = false;
-		this.error = null;         // error que impide continuar
-		this.tileErrors = 0;
-		this.tileProblem = null;   // explicación del último error de teselas, para cuando no llega malla
-		this._progress = ''; this._stall = 0;
-		this.dirty = true;
-		this._since = 0;
-		this._idle = 0; this._idleFrames = 0;
-		this._focus = new THREE.Vector3();
-		this._all = [];
-
-		const tiles = this.tiles = new TilesRenderer( credential.type === 'url' ? credential.value : undefined );
-		if ( credential.type === 'google' ) {
-
-			const google = new GoogleCloudAuthPlugin( { apiToken: credential.value, autoRefreshToken: true, useRecommendedSettings: false } );
-			tiles.registerPlugin( google );
-			hardenSession( google.auth, () => this._session() );
-			this._hardened = true;
-
-		} else if ( credential.type === 'ion' ) {
-
-			tiles.registerPlugin( new CesiumIonAuthPlugin( { apiToken: credential.value, assetId: ION_GOOGLE_ASSET, autoRefreshToken: true, useRecommendedSettings: false } ) );
-
-		}
-
-		tiles.registerPlugin( new GLTFExtensionsPlugin( { dracoLoader: sharedDraco(), metadata: false, autoDispose: false } ) );
-		this.reorient = new ReorientationPlugin( { lat: lat * DEG, lon: lon * DEG, height: 0, recenter: true } );
-		tiles.registerPlugin( this.reorient );
-		if ( quality.fade ) tiles.registerPlugin( new TilesFadePlugin( { fadeDuration: 300 } ) );
-
-		// regiones de carga: una columna para encontrar el suelo y una esfera que sigue al camión
-		this.column = new ColumnRegion( { errorTarget: 0.1 } );
-		this.near = new NearRegion( { errorTarget: 0.1 } );
-		this.near.sphere.radius = 0;
-		this.regions = new LoadRegionPlugin( { regions: [ this.column, this.near ] } );
-		tiles.registerPlugin( this.regions );
-
-		tiles.errorTarget = quality.errorTarget;
-		tiles.autoDisableRendererCulling = false;
-		tiles.lruCache.minBytesSize = quality.cacheGB * 0.75 * 2 ** 30;
-		tiles.lruCache.maxBytesSize = quality.cacheGB * 2 ** 30;
-		tiles.setCamera( camera );
-		tiles.setResolutionFromRenderer( camera, renderer );
-
-		// El aviso de sesión sale de este mismo evento: llega aunque la partida ya se haya
-		// abandonado, y el pedido raíz se cobra igual.
-		tiles.addEventListener( 'load-root-tileset', e => { if ( e.tileset ) { this.rootLoaded = true; this._session(); } } );
-		tiles.addEventListener( 'load-error', e => {
-
-			const root = ! this.rootLoaded && ( e.tile === null || e.tile === undefined );
-			if ( ! root ) this.tileErrors ++;
-			this._explain = () => { if ( root ) this.error = describeLoadError( e, credential ); else this.tileProblem = describeLoadError( e, credential, true ); };
-			this._explain();
-
-		} );
-		// Cuando la vista bloquea el pedido, el navegador lo avisa con un evento aparte, que
-		// puede llegar después del rechazo. Al llegar, el último error se explica de nuevo, ya con ese dato.
-		this._onBlocked = () => { if ( this._explain && viewBlocks( ...MAP_HOSTS ) ) this._explain(); };
-		blockedListeners.add( this._onBlocked );
-		const mark = () => { this.dirty = true; };
-		tiles.addEventListener( 'load-model', mark );
-		tiles.addEventListener( 'dispose-model', mark );
-		tiles.addEventListener( 'tile-visibility-change', mark );
-
-		scene.add( tiles.group );
-		this.setColumn( 0, 0 );
-
-	}
-
-	// La columna de carga baja por (x, z): sirve para encontrar el suelo antes de saber su altura
-	setColumn( x, z ) {
-
-		if ( ! this.rootLoaded ) { this._pendingColumn = { x, z }; return; }
-		const inv = this.tiles.group.matrixWorldInverse;
-		const ray = this.column.ray;
-		ray.origin.set( x, 9000, z ); ray.direction.set( 0, - 1, 0 );
-		ray.applyMatrix4( inv );
-		this.column.anchor.set( x, 0, z ).applyMatrix4( inv );
-		this.column.enabled = true;
-
-	}
-
-	// Al empezar a manejar, la columna ya cumplió su trabajo: dejarla encendida
-	// mantiene cargado el máximo detalle en el punto de partida durante toda la partida.
-	releaseColumn() { this.column.enabled = false; this._pendingColumn = null; }
-
-	_session() { if ( this.onSession ) { try { this.onSession(); } catch ( e ) { /* el aviso no debe interrumpir la carga */ } } }
-
-	setResolution() { this.tiles.setResolutionFromRenderer( this.camera, this.renderer ); }
-
-	// Cámaras adicionales (los espejos): el cargador trae lo que ven, con el detalle que pide su tamaño
-	addCamera( camera, width, height ) { this.tiles.setCamera( camera ); this.tiles.setResolution( camera, width, height ); }
-	removeCamera( camera ) { this.tiles.deleteCamera( camera ); }
-
-	// Tras mover el foco, la carga debe volver a quedar en reposo antes de darse por lista
-	settle() { this._idle = 0; this._idleFrames = 0; }
-
-	/**
-	 * focus: posición del camión (o del punto de aparición); withSphere: activa la región cercana
-	 */
-	update( focus, dt, withSphere = true ) {
-
-		const tiles = this.tiles;
-		this._focus.copy( focus );
-		if ( ! this._hardened ) {
-
-			// con Cesium ion, la librería registra el complemento de Google cuando llega la dirección del servicio
-			const google = tiles.getPluginByName( 'GOOGLE_CLOUD_AUTH_PLUGIN' );
-			if ( google ) { hardenSession( google.auth, () => this._session() ); this._hardened = true; }
-
-		}
-
-		if ( this.rootLoaded ) {
-
-			const inv = tiles.group.matrixWorldInverse;
-			if ( this._pendingColumn ) { const p = this._pendingColumn; this._pendingColumn = null; this.setColumn( p.x, p.z ); }
-			if ( withSphere ) {
-
-				this.near.sphere.center.copy( focus ).applyMatrix4( inv );
-				this.near.sphere.radius = 70;
-
-			} else this.near.sphere.radius = 0;
-
-		}
-
-		this.camera.updateMatrixWorld();
-		tiles.update();
-
-		// candidatas para los rayos de la física
-		this._since += dt;
-		if ( this.dirty || this._since > 0.25 ) {
-
-			this.refresh( focus, 75 );
-			this.dirty = false; this._since = 0;
-
-		}
-
-		this.field.budget = 1;
-		this.field.prewarm();
-
-		const s = tiles.stats;
-		const pending = s.downloading + s.parsing + s.queued;
-		const quiet = pending === 0 && this.rootLoaded;
-		this._idle = quiet ? this._idle + dt : 0;
-		this._idleFrames = quiet ? this._idleFrames + 1 : 0;
-
-		// descarga detenida: hay pedidos pendientes y nada cambia
-		const key = `${ s.downloading }|${ s.parsing }|${ s.queued }|${ s.loaded }|${ s.failed }|${ this.rootLoaded }`;
-		if ( key !== this._progress || ( pending === 0 && this.rootLoaded ) ) { this._progress = key; this._stall = 0; } else this._stall += dt;
-
-	}
-
-	// Segundos sin avance con la carga a medias
-	get stalled() { return this._stall; }
-
-	refresh( focus, radius ) {
-
-		const near = this.field.meshes, all = this._all;
-		near.length = 0; all.length = 0;
-		this.tiles.activeTiles.forEach( tile => {
-
-			const scene = tile.engineData && tile.engineData.scene;
-			if ( ! scene ) return;
-			scene.traverse( o => {
-
-				if ( ! o.isMesh || ! o.geometry ) return;
-				const d = RayField.prepare( o );
-				all.push( o );
-				d.dist = d.box.distanceToPoint( focus );
-				if ( d.dist < radius ) near.push( o );
-
-			} );
-
-		} );
-		near.sort( ( a, b ) => a.userData.rs.dist - b.userData.rs.dist );
-
-	}
-
-	// Rayo largo hacia abajo contra todas las teselas activas
-	groundAt( x, z ) {
-
-		if ( this.dirty ) { this.refresh( this._focus, 75 ); this.dirty = false; }
-		return longRay( this.field, x, z, this._all );
-
-	}
-
-	/**
-	 * Suelo más cercano a la altura y: primero hacia abajo desde un poco más arriba
-	 * del camión y, si no hay nada, desde lo alto. A diferencia de groundAt, bajo un
-	 * puente devuelve la calzada y no el tablero. Devuelve la altura o null.
-	 */
-	groundNear( x, z, y, above = true ) {
-
-		if ( this.dirty ) { this.refresh( this._focus, 75 ); this.dirty = false; }
-		return nearRay( this.field, x, z, y, this._all, above );
-
-	}
-
-	// En reposo: sin pedidos pendientes durante un rato y durante varios cuadros seguidos
-	// (con pocos cuadros por segundo, un solo cuadro largo no basta para darlo por cierto).
-	get settled() { return this._idle > IDLE_TIME && this._idleFrames >= 3; }
-	get ready() { return this.rootLoaded && this.settled; }
-
-	get progress() {
-
-		const s = this.tiles.stats;
-		const pending = s.downloading + s.parsing + s.queued;
-		if ( this.error ) return { ready: false, text: this.error, pending };
-		if ( ! this.rootLoaded ) return { ready: false, text: 'Conectando con el servicio de mapas', pending };
-		if ( pending > 0 ) return { ready: false, text: `Descargando la ciudad (${ pending } teselas en camino)`, pending };
-		return { ready: this.settled, text: 'Mapa cargado', pending: 0 };
-
-	}
-
-	attribution() {
-
-		const list = this.tiles.getAttributions();
-		const parts = [];
-		for ( const a of list ) if ( a.type === 'string' && a.value ) parts.push( a.value );
-		return parts.join( '; ' );
-
-	}
-
-	get provider() { return this.credential.type === 'url' ? '' : 'Google Maps'; }
-	get via() { return this.credential.type === 'ion' ? 'Cesium ion' : ''; }
-
-	stats() {
-
-		const s = this.tiles.stats;
-		return {
-			visibles: s.visible, activas: s.active, descargando: s.downloading + s.parsing + s.queued, fallidas: s.failed, rechazadas: s.refused || 0,
-			cacheMB: Math.round( this.tiles.lruCache.cachedBytes / 2 ** 20 ),
-			cercanas: this.field.meshes.length, rayos: this.field.rays, bvh: this.field.builds, bvhMs: this.field.buildMs,
-		};
-
-	}
-
-	async roads() { return fetchRoads( this.geo.lat0, this.geo.lon0, 2500 ); }
-
-	startHint() { return { x: 0, z: 0, yaw: Math.PI }; }
-
-	dispose() {
-
-		this.scene.remove( this.tiles.group );
-		this.tiles.dispose();
-		blockedListeners.delete( this._onBlocked );
-		this._explain = null;
-		// el decodificador Draco es compartido y sigue vivo: ver sharedDraco
-
-	}
-
-}
-
-// Explica un error de carga. `tile` indica que el mapa abrió y lo que falla son las teselas.
-export function describeLoadError( e, credential, tile = false ) {
-
-	const msg = String( ( e.error && e.error.message ) || e.error || '' );
-	const code = ( msg.match( /\b(4\d\d|5\d\d)\b/ ) || [] )[ 1 ];
-	const lead = tile ? 'El mapa abrió, pero las teselas no llegan. ' : '';
-	if ( credential.type === 'ion' && ! tile ) {
-
-		if ( code === '401' ) return 'Cesium ion rechazó el token (401). Revisa que esté copiado completo y que siga activo.';
-		if ( code === '404' ) return 'El token es válido, pero la cuenta no tiene el recurso "Google Photorealistic 3D Tiles" (404). Agrégalo desde Asset Depot en Cesium ion.';
-		if ( code === '403' || code === '429' ) return `Cesium ion no permitió la descarga (${ code }). Puede ser el límite mensual de la cuenta gratuita.`;
-
-	} else if ( credential.type !== 'url' ) {
-
-		if ( code === '400' ) return lead + 'Google no reconoce la clave (400). Revisa que esté copiada completa.';
-		if ( code === '403' ) return lead + 'Google rechazó la clave (403). Revisa que la Map Tiles API esté habilitada, que el proyecto tenga facturación activa y que la clave no esté restringida a otro sitio.';
-		if ( code === '429' ) return lead + 'Se alcanzó la cuota de la Map Tiles API (429).';
-
-	}
-
-	if ( code ) return `${ lead }${ tile ? 'El servicio respondió' : 'No se pudo abrir el mapa: el servicio respondió' } ${ code }.${ code[ 0 ] === '5' ? ' Suele ser pasajero: vuelve a intentar en unos minutos.' : '' }`;
-	// Sin código y con pedidos bloqueados por la vista: el pedido nunca salió del navegador.
-	if ( credential.type !== 'url' && viewBlocks( ...MAP_HOSTS ) ) return `La vista donde está abierto el juego bloquea la conexión con el servicio de mapas. ${ BLOCKED_ADVICE } La ciudad de pruebas funciona en esta vista.`;
-	// Sin código: el navegador no pudo leer la respuesta (sin conexión, o un rechazo
-	// que llega sin permiso de lectura entre orígenes) o la respuesta no era la esperada.
-	if ( msg ) console.warn( 'Ruta Sur · error de carga del mapa:', msg );
-	const framed = EMBEDDED && credential.type !== 'url' ? ` Si el juego está abierto dentro de otra aplicación, esa vista puede bloquear la conexión: ${ BLOCKED_ADVICE.charAt( 0 ).toLowerCase() }${ BLOCKED_ADVICE.slice( 1 ) }` : '';
-	return `${ lead }${ tile ? 'No' : 'No se pudo abrir el mapa: no' } hubo una respuesta legible del servicio. Revisa la conexión a internet y la credencial${ credential.type === 'google' ? ', y que la Map Tiles API esté habilitada' : '' }.${ framed }`;
-
-}
-
-// ---------------------------------------------------------------------------
 // Ciudad de pruebas
 // ---------------------------------------------------------------------------
-// Imita el comportamiento de las teselas: cada trozo de ciudad tiene una
-// versión gruesa, que se ve de lejos y queda 25 cm más arriba (el error típico
-// de un nivel de detalle bajo), y una fina que se construye al acercarse.
+// Imita el comportamiento de una malla fotogramétrica por niveles de detalle:
+// cada trozo de ciudad tiene una versión gruesa, que se ve de lejos y queda
+// 25 cm más arriba (el error típico de un nivel bajo), y una fina que se
+// construye al acercarse.
 const FINE_IN = 170, FINE_OUT = 215, COARSE_LIFT = 0.25;
 
 export class TestWorld {

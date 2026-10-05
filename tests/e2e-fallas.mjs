@@ -134,14 +134,14 @@ if ( run( 'en-juego' ) ) {
 	await page.click( '#falla-seguir' );
 	p = await panel( page );
 	R.check( 'El informe se puede cerrar', ! p.visible );
-	// un error que cita la dirección de un pedido, con la clave del mapa y un token
+	// un error que cita la dirección de un pedido con parámetros, una clave y un token
 	const KEY = 'AIza' + 'k'.repeat( 35 ), TOKEN = 'eyJhbGciOiJIUzI1NiJ9.eyJqdGkiOiJzZWNyZXRvIn0.ZmlybWE';
-	await page.evaluate( ( [ key, token ] ) => { setTimeout( () => { throw new Error( `segundo error al pedir https://tile.googleapis.com/v1/3dtiles/root.json?key=${ key }&session=S1 con ${ token } y ${ key }` ); }, 0 ); }, [ KEY, TOKEN ] );
+	await page.evaluate( ( [ key, token ] ) => { setTimeout( () => { throw new Error( `segundo error al pedir https://overpass-api.de/api/root.json?key=${ key }&session=S1 con ${ token } y ${ key }` ); }, 0 ); }, [ KEY, TOKEN ] );
 	await sleep( page, 500 );
 	p = await panel( page );
 	R.check( 'Los errores siguientes se suman al informe sin volver a interrumpir', ! p.visible && p.total === 2 );
 	const report = await page.evaluate( () => window.__rsGuardia.informe() );
-	R.check( 'El informe no lleva credenciales del mapa ni parámetros de las direcciones', /segundo error al pedir root\.json con eyJ… y AIza…/.test( report ) && ! report.includes( KEY ) && ! report.includes( TOKEN ) && ! /session=|key=|kkkk|secreto|c2VjcmV0/.test( report ), report.split( '\n' ).find( l => /segundo error/.test( l ) ) );
+	R.check( 'El informe no lleva claves ni parámetros de las direcciones', /segundo error al pedir root\.json con eyJ… y AIza…/.test( report ) && ! report.includes( KEY ) && ! report.includes( TOKEN ) && ! /session=|key=|kkkk|secreto|c2VjcmV0/.test( report ), report.split( '\n' ).find( l => /segundo error/.test( l ) ) );
 	await page.click( '#seguir' );
 	s = await state( page );
 	R.check( 'La partida sigue', s.state === 'driving' );

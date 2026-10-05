@@ -3,7 +3,7 @@
 // Una ciudad procedural que imita los defectos de una malla fotogramétrica a
 // nivel de calle: calzada con ruido, soleras, autos estacionados convertidos
 // en bultos, árboles como masas y una pasarela sobre la avenida. Sirve para
-// manejar sin clave de Google y para probar el juego sin gastar cuota.
+// conocer los controles sin conexión y para probar el juego sin pedir nada a la red.
 //
 // El módulo es puro (no depende de Three.js): entrega arreglos de vértices,
 // colores e índices, y la red vial en el mismo formato que responde Overpass.

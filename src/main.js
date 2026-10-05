@@ -2,7 +2,7 @@
 // --------------------------------------------------------------------------
 import * as THREE from 'three';
 import { VEHICLES, createTruck, placeTruck, reseatTruck, stepTruck, speedKmh, gearLabel, articulation, totalMass, trailerAxleXZ } from './physics.js';
-import { TilesWorld, TestWorld, QUALITY, EMBEDDED, viewBlocks } from './world.js';
+import { TestWorld, QUALITY, EMBEDDED, viewBlocks } from './world.js';
 import { OpenWorld } from './openworld.js';
 import { buildGraph, spawnPoint, nearestSegment } from './osm.js';
 import { createTruckModel } from './truck-model.js';
@@ -44,17 +44,8 @@ const store = {
 	write( key, value ) { try { localStorage.setItem( 'rutasur.' + key, JSON.stringify( value ) ); } catch ( e ) { /* sin almacenamiento */ } },
 };
 
-const config = Object.assign( { city: 'temuco', coords: '', truck: 'articulado', quality: 'media', credential: '' }, store.read( 'config', {} ) );
+const config = Object.assign( { city: 'temuco', coords: '', truck: 'articulado', quality: 'media' }, store.read( 'config', {} ) );
 
-function detectCredential( raw ) {
-
-	const v = raw.trim();
-	if ( ! v ) return null;
-	if ( /^AIza[0-9A-Za-z_-]{20,}$/.test( v ) ) return { type: 'google', value: v, label: 'clave de Google Maps Platform' };
-	if ( /^eyJ[0-9A-Za-z_-]+\.[0-9A-Za-z_-]+\.[0-9A-Za-z_-]+$/.test( v ) ) return { type: 'ion', value: v, label: 'token de Cesium ion' };
-	return { type: 'unknown', value: v, label: '' };
-
-}
 
 function parseCoords( text ) {
 
@@ -63,17 +54,6 @@ function parseCoords( text ) {
 	const lat = parseFloat( m[ 1 ].replace( ',', '.' ) ), lon = parseFloat( m[ 2 ].replace( ',', '.' ) );
 	if ( ! ( Math.abs( lat ) <= 85 && Math.abs( lon ) <= 180 ) ) return null;
 	return { lat, lon };
-
-}
-
-// Sesiones de mapa iniciadas este mes (cada una cuenta para la cuota del proveedor)
-function sessionsThisMonth( add = 0 ) {
-
-	const month = new Date().toISOString().slice( 0, 7 );
-	const s = store.read( 'sesiones', { month, count: 0 } );
-	if ( s.month !== month ) { s.month = month; s.count = 0; }
-	if ( add ) { s.count += add; store.write( 'sesiones', s ); }
-	return s.count;
 
 }
 
@@ -221,49 +201,29 @@ function buildMenu() {
 	chips( $( 'calidades' ), 'calidad', Object.entries( QUALITY ).map( ( [ id, q ] ) => [ id, q.label ] ), config.quality );
 	check( cities, config.city );
 
-	const coords = $( 'coordenadas' ), cred = $( 'credencial' ), note = $( 'credencial-nota' );
+	const coords = $( 'coordenadas' );
 	coords.value = config.coords || '';
-	cred.value = config.credential || '';
 	const syncCity = () => { coords.hidden = selected( 'ciudad' ) !== 'otro'; };
 	cities.addEventListener( 'change', syncCity );
 	syncCity();
 
-	const kept = store.available ? 'Se guarda solo en este navegador.' : 'Esta vista no guarda datos: habrá que pegarla en cada visita.';
-	const syncCred = () => {
-
-		const d = detectCredential( cred.value );
-		if ( ! d ) note.textContent = kept;
-		else if ( d.type === 'unknown' ) note.textContent = 'No reconozco el formato. Un token de Cesium ion empieza con "eyJ" y una clave de Google con "AIza".';
-		else note.textContent = `Detectado: ${ d.label }. ${ kept }`;
-
-	};
-
-	cred.addEventListener( 'input', syncCred );
-	syncCred();
-
-	showSessions();
-
-	// Abierto desde una dirección web, la clave de Google puede restringirse a ese sitio
-	if ( location.protocol !== 'file:' && /^https?:$/.test( location.protocol ) ) $( 'clave-nota' ).textContent = `. Puedes restringirla al sitio ${ location.host }`;
-
-	// Dentro de otra aplicación (una vista previa), el mapa real puede quedar bloqueado:
-	// se avisa antes de que la persona pegue su credencial y espere una carga que no llega.
+	// Dentro de otra aplicación (una vista previa), la red puede quedar bloqueada:
+	// se avisa antes de que la persona espere una carga que no llega.
 	if ( EMBEDDED ) {
 
 		// la aplicación anfitriona puede quedarse con la tecla Esc (por ejemplo, para cerrar su panel): P también pausa
 		$( 'tecla-pausa' ).textContent = 'P';
 		const m = $( 'marco-nota' );
-		m.textContent = 'El juego está abierto dentro de otra aplicación. La ciudad de pruebas funciona aquí. El mapa real necesita conectarse con los servicios de mapas, y una vista previa puede bloquear esa conexión: si no carga, guarda este archivo en tu computador y ábrelo con doble clic en Chrome o Edge.';
+		m.textContent = 'El juego está abierto dentro de otra aplicación. La ciudad de pruebas funciona aquí. El mapa abierto necesita conectarse con OpenStreetMap, y una vista previa puede bloquear esa conexión: si no carga, guarda este archivo en tu computador y ábrelo con doble clic en Chrome o Edge.';
 		m.hidden = false;
 
 	}
 
-	// "Conducir" con el botón o con Enter en un campo. No se usa el envío de un formulario:
-	// un marco aislado sin permiso de formularios lo bloquea, y el botón quedaría sin efecto.
-	$( 'conducir' ).addEventListener( 'click', () => startFromMenu( 'tiles' ) );
-	for ( const field of [ cred, coords ] ) field.addEventListener( 'keydown', e => { if ( e.key === 'Enter' ) { e.preventDefault(); startFromMenu( 'tiles' ); } } );
+	// "Conducir" con el botón o con Enter en el campo de coordenadas. No se usa el envío de un
+	// formulario: un marco aislado sin permiso de formularios lo bloquea, y el botón quedaría sin efecto.
+	$( 'conducir' ).addEventListener( 'click', () => startFromMenu( 'open' ) );
+	coords.addEventListener( 'keydown', e => { if ( e.key === 'Enter' ) { e.preventDefault(); startFromMenu( 'open' ); } } );
 	$( 'pista' ).addEventListener( 'click', () => startFromMenu( 'test' ) );
-	$( 'abierto' ).addEventListener( 'click', () => startFromMenu( 'open' ) );
 	$( 'carga-volver' ).addEventListener( 'click', () => toMenu() );
 	$( 'seguir' ).addEventListener( 'click', () => setPaused( false ) );
 	// las mismas acciones de las teclas R y G, para quien juega sin teclado
@@ -286,12 +246,12 @@ function menuError( text ) {
 
 }
 
-// mode: 'test' (ciudad de pruebas), 'open' (mapa abierto desde OpenStreetMap) o 'tiles' (malla de Google)
+// mode: 'test' (ciudad de pruebas) u 'open' (mapa abierto desde OpenStreetMap)
 function startFromMenu( mode ) {
 
 	menuError( '' );
 	config.city = selected( 'ciudad' ); config.truck = selected( 'camion' ); config.quality = selected( 'calidad' );
-	config.coords = $( 'coordenadas' ).value; config.credential = $( 'credencial' ).value.trim();
+	config.coords = $( 'coordenadas' ).value;
 	store.write( 'config', config );
 
 	if ( mode === 'test' ) { sound.start(); return start( { test: true, truck: config.truck, quality: config.quality } ); }
@@ -310,14 +270,8 @@ function startFromMenu( mode ) {
 
 	}
 
-	if ( mode === 'open' ) { sound.start(); return start( { open: true, lat, lon, truck: config.truck, quality: config.quality } ); }
-
-	const cred = detectCredential( config.credential );
-	if ( ! cred ) return menuError( 'Falta la credencial del mapa. Pega un token de Cesium ion o una clave de Google, o maneja sin credencial por el mapa abierto o la ciudad de pruebas.' );
-	if ( cred.type === 'unknown' ) return menuError( 'No reconozco el formato de la credencial. Un token de Cesium ion empieza con "eyJ" y una clave de Google con "AIza".' );
-
 	sound.start();
-	start( { credential: cred, lat, lon, truck: config.truck, quality: config.quality } );
+	start( { open: true, lat, lon, truck: config.truck, quality: config.quality } );
 
 }
 
@@ -337,8 +291,7 @@ function start( opts ) {
 	sky.scale.setScalar( game.quality.far * 0.9 );
 
 	if ( opts.test ) game.world = new TestWorld( { scene } );
-	else if ( opts.open ) game.world = new OpenWorld( { scene, lat: opts.lat, lon: opts.lon } );
-	else game.world = new TilesWorld( { scene, camera, renderer, credential: opts.credential, lat: opts.lat, lon: opts.lon, quality: game.quality, onSession: () => { sessionsThisMonth( 1 ); showSessions(); } } );
+	else game.world = new OpenWorld( { scene, lat: opts.lat, lon: opts.lon } );
 
 	const hint = game.world.startHint();
 	const L = game.load = {
@@ -382,7 +335,6 @@ function start( opts ) {
 }
 
 const _focus = new THREE.Vector3();
-const STALL_LIMIT = 25; // segundos sin avance en la descarga antes de dejar de esperar
 
 function loadingStep( dt ) {
 
@@ -410,24 +362,14 @@ function loadingStep( dt ) {
 	world.update( _focus, dt, L.ground !== null );
 
 	const p = world.progress;
-	// Descarga detenida: quedan pedidos pendientes y nada avanza hace rato. No se espera
-	// para siempre: se sigue con lo que haya, y si no hay suelo se explica el motivo.
-	const stuck = world.stalled > STALL_LIMIT;
 
 	if ( L.phase === 'world' ) {
 
 		text.textContent = p.text;
-		if ( ! p.ready && ! ( stuck && world.rootLoaded ) ) {
-
-			if ( stuck ) world.error = 'El servicio de mapas no responde. Revisa la conexión a internet y vuelve a intentar.';
-			return;
-
-		}
-
+		if ( ! p.ready ) return;
 		const g = world.groundAt( sx, sz );
 		if ( g ) L.ground = g.y;
 		L.phase = 'roads'; L.wait = 0;
-		world.settle();
 
 	}
 
@@ -444,9 +386,7 @@ function loadingStep( dt ) {
 
 		}
 
-		if ( ! L.spawn ) L.spawn = { x: L.hint.x, z: L.hint.z, yaw: L.hint.yaw, search: world.kind === 'tiles' };
-		world.setColumn( L.spawn.x, L.spawn.z );
-		world.settle();
+		if ( ! L.spawn ) L.spawn = { x: L.hint.x, z: L.hint.z, yaw: L.hint.yaw };
 		L.phase = 'ground'; L.wait = 0;
 		return;
 
@@ -454,22 +394,19 @@ function loadingStep( dt ) {
 
 	if ( L.phase === 'ground' ) {
 
-		// el máximo detalle bajo el punto de partida
+		// el suelo bajo el punto de partida
 		L.wait += dt;
 		text.textContent = p.ready ? 'Buscando la calzada' : p.text;
 		const g = world.groundAt( L.spawn.x, L.spawn.z );
 		if ( g ) L.ground = g.y;
-		if ( ( ! p.ready && ! stuck ) || L.wait < 0.5 ) return;
+		if ( ! p.ready || L.wait < 0.5 ) return;
 		if ( ! g ) {
 
-			// sin suelo: si las teselas fallaron, el motivo es ese y no la falta de cobertura
-			if ( L.wait > 12 || stuck ) world.error = world.tileProblem || ( stuck ? 'La descarga del mapa se detuvo antes de tener suelo donde dejar el camión. Vuelve a intentar.' : 'En este punto el servicio no entrega malla 3D. Elige otro lugar.' );
+			if ( L.wait > 12 ) world.error = 'No hay suelo en el punto de partida. Elige otro lugar.';
 			return;
 
 		}
 
-		if ( L.spawn.search ) pickOpenSpot( L.spawn );
-		world.settle();
 		L.phase = 'place'; L.wait = 0;
 		return;
 
@@ -495,36 +432,6 @@ function loadingStep( dt ) {
 
 }
 
-// Sin red vial no se sabe dónde hay calle: se busca el punto bajo y parejo
-// más cercano, que suele ser calzada y no un techo.
-function pickOpenSpot( spawn ) {
-
-	const world = game.world;
-	let best = null;
-	for ( let i = - 4; i <= 4; i ++ ) for ( let j = - 4; j <= 4; j ++ ) {
-
-		const x = spawn.x + i * 9, z = spawn.z + j * 9;
-		const g = world.groundAt( x, z );
-		if ( ! g || g.ny < 0.94 ) continue;
-		// parejo: los vecinos a 3 m están a la misma altura
-		let flat = true;
-		for ( const [ dx, dz ] of [ [ 3, 0 ], [ - 3, 0 ], [ 0, 3 ], [ 0, - 3 ] ] ) {
-
-			const n = world.groundAt( x + dx, z + dz );
-			if ( ! n || Math.abs( n.y - g.y ) > 0.4 ) { flat = false; break; }
-
-		}
-
-		if ( ! flat ) continue;
-		const score = g.y + Math.hypot( i, j ) * 0.15;
-		if ( ! best || score < best.score ) best = { x, z, y: g.y, score };
-
-	}
-
-	if ( best ) { spawn.x = best.x; spawn.z = best.z; }
-
-}
-
 // Encargos sobre una red vial (o modo libre, sin red), con la caja guardada en el navegador
 function newJobs( graph ) {
 
@@ -544,7 +451,6 @@ function beginDriving( t ) {
 	game.mirrors = new Mirrors( renderer, scene, { width: game.quality.mirror, both: game.quality.mirrorBoth, far: game.quality.far } );
 	game.mirrors.attach( game.model, world, [ $( 'espejo-izq' ), $( 'espejo-der' ) ], game.cam.mode === 0 );
 	world.field.unlimited = false;
-	world.releaseColumn();
 
 	game.jobs = newJobs( game.graph );
 	if ( game.graph ) game.jobs.offer( t );
@@ -604,15 +510,6 @@ function toMenu() {
 	game.state = 'menu';
 	$( 'menu' ).hidden = false; $( 'carga' ).hidden = true; $( 'pausa' ).hidden = true;
 	hud.show( false );
-	showSessions();
-
-}
-
-function showSessions() {
-
-	const n = sessionsThisMonth();
-	const count = store.available ? `Sesiones iniciadas este mes en este navegador: ${ n }.` : 'Esta vista no guarda datos, así que aquí no se lleva la cuenta.';
-	$( 'sesiones' ).textContent = `Cada partida con mapa de Google usa una sesión. ${ count } La cuenta gratuita de Cesium ion incluye 1.000 al mes.`;
 
 }
 
@@ -633,7 +530,7 @@ function setPaused( on ) {
 // Acciones del jugador
 // --------------------------------------------------------------------------
 const CAM_NAMES = [ 'Cabina', 'Exterior', 'Cenital' ];
-const WORLD_NAMES = { test: 'ciudad de pruebas', open: 'mapa abierto', tiles: 'teselas 3D' };
+const WORLD_NAMES = { test: 'ciudad de pruebas', open: 'mapa abierto' };
 
 function setCamera( mode ) {
 
@@ -1031,7 +928,7 @@ function debugText() {
 	const geo = w.geo.toGeo( t.x, t.y, t.z );
 	const info = renderer.info;
 	return [
-		`Ruta Sur ${ VERSION } · ${ WORLD_NAMES[ w.kind ] || 'teselas 3D' }`,
+		`Ruta Sur ${ VERSION } · ${ WORLD_NAMES[ w.kind ] || w.kind }`,
 		`${ p.fps.toFixed( 0 ) } c/s · física ${ p.physAvg.toFixed( 2 ) } ms · ${ p.rayAvg.toFixed( 0 ) } rayos por cuadro`,
 		`dibujos ${ info.render.calls } · triángulos ${ ( info.render.triangles / 1e6 ).toFixed( 2 ) } M`,
 		`teselas visibles ${ s.visibles } · activas ${ s.activas } · en camino ${ s.descargando } · fallidas ${ s.fallidas }${ s.rechazadas ? ` · sin memoria ${ s.rechazadas }` : '' }`,
@@ -1114,7 +1011,7 @@ canvas.addEventListener( 'webglcontextrestored', () => {
 
 // Un error sin atender durante la partida abre el informe de falla: el camión se detiene mientras tanto.
 guard.alFallar = () => { if ( game.state === 'driving' ) setPaused( true ); };
-guard.datos.estado = () => `${ game.state }${ game.world ? ', ' + ( WORLD_NAMES[ game.world.kind ] || 'teselas 3D' ) : '' }`;
+guard.datos.estado = () => `${ game.state }${ game.world ? ', ' + ( WORLD_NAMES[ game.world.kind ] || game.world.kind ) : '' }`;
 
 if ( renderer ) {
 
@@ -1125,18 +1022,8 @@ if ( renderer ) {
 	// Arranque directo para pruebas y desarrollo:
 	//   ?auto=test                      ciudad de pruebas
 	//   ?auto=open&lat=..&lon=..        mapa abierto desde OpenStreetMap (sin lat y lon: Temuco)
-	//   ?tileset=URL&lat=..&lon=..      un tileset 3D propio, sin credencial
 	if ( params.get( 'auto' ) === 'test' ) start( { test: true, truck: params.get( 'veh' ) || config.truck, quality: params.get( 'q' ) || config.quality } );
 	else if ( params.get( 'auto' ) === 'open' ) start( { open: true, lat: parseFloat( params.get( 'lat' ) ) || CITIES[ 0 ].lat, lon: parseFloat( params.get( 'lon' ) ) || CITIES[ 0 ].lon, truck: params.get( 'veh' ) || config.truck, quality: params.get( 'q' ) || config.quality } );
-	else if ( params.get( 'tileset' ) ) {
-
-		start( {
-			credential: { type: 'url', value: params.get( 'tileset' ) },
-			lat: parseFloat( params.get( 'lat' ) ), lon: parseFloat( params.get( 'lon' ) ),
-			truck: params.get( 'veh' ) || config.truck, quality: params.get( 'q' ) || config.quality,
-		} );
-
-	}
 
 } else {
 

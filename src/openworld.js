@@ -1,6 +1,6 @@
 // Ruta Sur · mundo del mapa abierto
 // --------------------------------------------------------------------------
-// La misma interfaz que TilesWorld y TestWorld, con la ciudad levantada desde
+// La misma interfaz que TestWorld, con la ciudad levantada desde
 // OpenStreetMap (ver openmap.js). Pide calles y edificios a Overpass, arma los
 // trozos de malla alrededor del camión a medida que se mueve y responde los
 // rayos de la física con un BVH por trozo.

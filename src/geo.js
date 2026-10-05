@@ -1,11 +1,10 @@
 // Ruta Sur · geodesia
 // --------------------------------------------------------------------------
 // Conversión entre coordenadas geográficas (WGS84) y el sistema local del
-// juego. El origen se fija en un punto (lat0, lon0, h0) y los ejes siguen la
-// misma convención que usa 3d-tiles-renderer al reorientar la malla:
+// juego. El origen se fija en un punto (lat0, lon0, h0) y los ejes son:
 //   +X = oeste, +Y = arriba, +Z = norte.
-// La conversión es exacta (pasa por coordenadas ECEF), de modo que un punto de
-// OpenStreetMap cae en el mismo lugar que la malla de Google.
+// La conversión es exacta (pasa por coordenadas ECEF), así que las calles y los
+// edificios de OpenStreetMap caen donde corresponde a cualquier distancia del origen.
 
 export const WGS84_A = 6378137;
 export const WGS84_F = 1 / 298.257223563;

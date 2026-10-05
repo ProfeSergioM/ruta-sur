@@ -1,5 +1,5 @@
-// Prueba de extremo a extremo del mapa abierto: calles y edificios de OpenStreetMap,
-// sin credencial. Overpass se simula con la muestra real del centro de Temuco y
+// Prueba de extremo a extremo del mapa abierto: calles y edificios de OpenStreetMap.
+// Overpass se simula con la muestra real del centro de Temuco y
 // edificios sintéticos en sus manzanas. Ejecutar: node tests/e2e-open.mjs
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
