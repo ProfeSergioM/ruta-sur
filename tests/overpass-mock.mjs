@@ -16,8 +16,9 @@ export function overpassAnswer( query, full ) {
 		elements: full.elements.map( e => {
 
 			const o = { type: e.type, id: e.id };
+			if ( e.type === 'node' ) { o.lat = e.lat; o.lon = e.lon; }
 			if ( level === 'skel' || level === 'body' || level === 'meta' ) o.nodes = e.nodes;
-			if ( geom ) o.geometry = e.geometry;
+			if ( geom && e.type !== 'node' ) o.geometry = e.geometry;
 			if ( level === 'body' || level === 'tags' || level === 'meta' ) o.tags = e.tags;
 			return o;
 

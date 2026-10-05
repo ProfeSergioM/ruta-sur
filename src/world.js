@@ -13,7 +13,7 @@
 import * as THREE from 'three';
 import { MeshBVH } from 'three-mesh-bvh';
 import { Geo } from './geo.js';
-import { overpassQuery, buildingsQuery, OVERPASS_ENDPOINTS } from './osm.js';
+import { overpassQuery, buildingsQuery, featureKind, OVERPASS_ENDPOINTS } from './osm.js';
 import { generateCity, buildRegion, cityChunks, cityRoadsOSM, CITY_START } from './testcity.js';
 
 // ---------------------------------------------------------------------------
@@ -248,8 +248,8 @@ export function makeTerrain( field ) {
 // Red vial desde Overpass, con respaldo entre instancias y memoria local
 // ---------------------------------------------------------------------------
 const ROADS_PREFIX = 'rutasur.calles.3.';   // la versión cambia cuando cambia la consulta o el formato guardado
-const BUILDINGS_PREFIX = 'rutasur.edificios.1.';
-const ROADS_OLD = [ 'rutasur.roads.', 'rutasur.calles.2.' ]; // formatos anteriores: se borran al encontrarlos
+const BUILDINGS_PREFIX = 'rutasur.edificios.2.';
+const ROADS_OLD = [ 'rutasur.roads.', 'rutasur.calles.2.', 'rutasur.edificios.1.' ]; // formatos anteriores: se borran al encontrarlos
 const ROADS_TTL = 14 * 864e5;               // dos semanas
 const ROADS_TIMEOUT = 50000;                // espera máxima por instancia [ms]; la consulta pide hasta 40 s al servidor
 
@@ -276,10 +276,10 @@ function unpackRoads( packed ) {
 
 }
 
-// Edificios guardados: [ id, [ lat, lon, ... ], etiquetas ]
+// Edificios y ambientación guardados: [ id, [ lat, lon, ... ], etiquetas ]; un árbol es un nodo con un solo punto
 function packBuildings( osm ) {
 
-	return osm.elements.map( e => [ e.id, e.geometry.flatMap( p => [ p.lat, p.lon ] ), e.tags ] );
+	return osm.elements.map( e => [ e.id, e.type === 'node' ? [ e.lat, e.lon ] : e.geometry.flatMap( p => [ p.lat, p.lon ] ), e.tags ] );
 
 }
 
@@ -287,6 +287,7 @@ function unpackBuildings( packed ) {
 
 	return { elements: packed.map( ( [ id, flat, tags ] ) => {
 
+		if ( flat.length === 2 && tags && tags.natural === 'tree' ) return { type: 'node', id, lat: flat[ 0 ], lon: flat[ 1 ], tags };
 		const geometry = [];
 		for ( let i = 0; i < flat.length; i += 2 ) geometry.push( { lat: flat[ i ], lon: flat[ i + 1 ] } );
 		return { type: 'way', id, geometry, tags };
@@ -402,13 +403,14 @@ function pickTags( t = {} ) {
 function pickBuildingTags( t = {} ) {
 
 	const out = {};
-	for ( const k of [ 'building', 'height', 'building:levels', 'name' ] ) if ( t[ k ] !== undefined ) out[ k ] = String( t[ k ] ).slice( 0, 60 );
+	for ( const k of [ 'building', 'height', 'building:levels', 'name', 'leisure', 'landuse', 'natural', 'waterway' ] ) if ( t[ k ] !== undefined ) out[ k ] = String( t[ k ] ).slice( 0, 60 );
 	return out;
 
 }
 
-// Edificios de OpenStreetMap alrededor de un punto, con la misma memoria local que las calles.
-// Solo las vías cerradas con al menos tres esquinas distintas.
+// Edificios, áreas verdes, agua y árboles de OpenStreetMap alrededor de un punto, con la
+// misma memoria local que las calles. De las vías, solo las cerradas con al menos tres
+// esquinas distintas; de los nodos, solo los árboles.
 export async function fetchBuildings( lat, lon, radius = 1500 ) {
 
 	const cacheKey = `${ BUILDINGS_PREFIX }${ lat.toFixed( 3 ) }.${ lon.toFixed( 3 ) }.${ radius }`;
@@ -441,7 +443,16 @@ export async function fetchBuildings( lat, lon, radius = 1500 ) {
 			const slim = { elements: [] };
 			for ( const e of data.elements ) {
 
-				if ( e.type !== 'way' || ! Array.isArray( e.geometry ) || ! e.tags || ! e.tags.building ) continue;
+				const kind = e.tags && featureKind( e.tags );
+				if ( ! kind ) continue;
+				if ( e.type === 'node' ) {
+
+					if ( kind === 'tree' && typeof e.lat === 'number' && typeof e.lon === 'number' ) slim.elements.push( { type: 'node', id: e.id, lat: e.lat, lon: e.lon, tags: { natural: 'tree' } } );
+					continue;
+
+				}
+
+				if ( e.type !== 'way' || ! Array.isArray( e.geometry ) || kind === 'tree' ) continue;
 				const g = e.geometry.filter( p => p && typeof p.lat === 'number' && typeof p.lon === 'number' );
 				// una vía cerrada repite el primer punto al final
 				if ( g.length > 1 && g[ 0 ].lat === g[ g.length - 1 ].lat && g[ 0 ].lon === g[ g.length - 1 ].lon ) g.pop();

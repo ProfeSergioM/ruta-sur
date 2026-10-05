@@ -336,7 +336,7 @@ function start( opts ) {
 	sky.scale.setScalar( game.quality.far * 0.9 );
 
 	if ( opts.test ) game.world = new TestWorld( { scene } );
-	else game.world = new OpenWorld( { scene, lat: opts.lat, lon: opts.lon } );
+	else game.world = new OpenWorld( { scene, lat: opts.lat, lon: opts.lon, far: game.quality.far } );
 
 	const hint = game.world.startHint();
 	const L = game.load = {

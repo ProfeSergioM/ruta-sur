@@ -8,26 +8,29 @@
 import * as THREE from 'three';
 import { Geo } from './geo.js';
 import { RayField, makeTerrain, longRay, nearRay, fetchRoads, fetchBuildings, viewBlocks, blockedListeners, BLOCKED_ADVICE } from './world.js';
-import { openCity, chunkIndex, buildOpenChunk, groundPlane, chunkOf, OPEN, LAYERS } from './openmap.js';
+import { openCity, chunkIndex, buildOpenChunk, groundPlane, hillRing, chunkOf, OPEN, LAYERS, RAY_LAYERS } from './openmap.js';
 
 // Texturas de grano dibujadas en un lienzo: valen como luminancia (alrededor del
 // blanco), y el color de cada vértice les da el tono. Sin documento (las pruebas
 // numéricas) no hay texturas y las capas quedan de color plano.
 function makeTextures() {
 
-	if ( typeof document === 'undefined' ) return { asphalt: null, sidewalk: null };
+	if ( typeof document === 'undefined' ) return { asphalt: null, sidewalk: null, grass: null, facade: null, dash: null };
 	const hash = ( x, y ) => { const s = Math.sin( x * 12.9898 + y * 78.233 ) * 43758.5453; return s - Math.floor( s ); };
-	const make = ( size, paint ) => {
+	// paint devuelve la luminancia (en torno a 1) o [ r, g, b, a ] en el mismo rango
+	const make = ( size, paint, h = size ) => {
 
 		const c = document.createElement( 'canvas' );
-		c.width = c.height = size;
+		c.width = size; c.height = h;
 		const g = c.getContext( '2d' );
 		if ( ! g ) return null;
-		const img = g.createImageData( size, size ), d = img.data;
-		for ( let y = 0; y < size; y ++ ) for ( let x = 0; x < size; x ++ ) {
+		const img = g.createImageData( size, h ), d = img.data;
+		const clamp = v => Math.max( 0, Math.min( 255, Math.round( 255 * v ) ) );
+		for ( let y = 0; y < h; y ++ ) for ( let x = 0; x < size; x ++ ) {
 
-			const l = Math.max( 0, Math.min( 255, Math.round( 255 * paint( x, y ) ) ) ), i = ( y * size + x ) * 4;
-			d[ i ] = d[ i + 1 ] = d[ i + 2 ] = l; d[ i + 3 ] = 255;
+			const p = paint( x, y ), i = ( y * size + x ) * 4;
+			if ( typeof p === 'number' ) { d[ i ] = d[ i + 1 ] = d[ i + 2 ] = clamp( p ); d[ i + 3 ] = 255; }
+			else { d[ i ] = clamp( p[ 0 ] ); d[ i + 1 ] = clamp( p[ 1 ] ); d[ i + 2 ] = clamp( p[ 2 ] ); d[ i + 3 ] = clamp( p[ 3 ] ); }
 
 		}
 
@@ -57,13 +60,34 @@ function makeTextures() {
 		return ( 0.94 + 0.1 * hash( x + 3, y + 9 ) ) * tile * joint;
 
 	} );
-	return { asphalt, sidewalk };
+	// pasto: moteado de dos escalas, con matas más oscuras
+	const grass = make( 128, ( x, y ) => {
+
+		const fine = 0.9 + 0.2 * hash( x, y ), coarse = 0.9 + 0.2 * hash( Math.floor( x / 9 ) + 100, Math.floor( y / 9 ) );
+		const tuft = hash( x * 7 + 3, y * 3 + 5 ) > 0.97 ? 0.8 : 1;
+		return fine * coarse * tuft;
+
+	} );
+	// fachada: una celda de 4 m por un piso, con una ventana centrada; el rincón (0, 0) es pared lisa
+	const facade = make( 64, ( x, y ) => {
+
+		const wall = 0.96 + 0.08 * hash( x, y );
+		const inWin = x >= 20 && x < 44 && y >= 16 && y < 48;
+		if ( ! inWin ) return wall;
+		// marco claro, vidrio oscuro con un reflejo
+		if ( x < 23 || x >= 41 || y < 19 || y >= 45 ) return 0.86;
+		return 0.32 + 0.12 * ( ( x + y ) % 21 < 6 ? 1 : 0 ) + 0.04 * hash( x, y );
+
+	} );
+	// línea central discontinua: tramos de 3 m pintados y 3 m sin pintar, como transparencia
+	const dash = make( 8, ( x, y ) => ( y < 32 ? [ 1, 1, 1, 1 ] : [ 1, 1, 1, 0 ] ), 64 );
+	return { asphalt, sidewalk, grass, facade, dash };
 
 }
 
 export class OpenWorld {
 
-	constructor( { scene, lat, lon } ) {
+	constructor( { scene, lat, lon, far = 4000 } ) {
 
 		this.kind = 'open';
 		this.scene = scene;
@@ -77,21 +101,29 @@ export class OpenWorld {
 		// Cada capa se acerca un poco más a la cámara en profundidad (desplazamiento de
 		// polígono), así la calzada tapa la vereda y la vereda al suelo a cualquier distancia.
 		// La calzada y la vereda llevan una textura de grano, que el color del vértice tiñe.
-		const layer = ( k, map = null ) => new THREE.MeshBasicMaterial( { vertexColors: true, map, polygonOffset: k !== 0, polygonOffsetFactor: - k, polygonOffsetUnits: - 2 * k } );
-		this.textures = makeTextures();
-		this.materials = { base: layer( 0 ), walk: layer( 1, this.textures.sidewalk ), road: layer( 2, this.textures.asphalt ), line: layer( 3 ), plane: new THREE.MeshBasicMaterial( { vertexColors: true, polygonOffset: true, polygonOffsetFactor: 2, polygonOffsetUnits: 4 } ) };
+		const layer = ( k, map = null, extra = {} ) => new THREE.MeshBasicMaterial( { vertexColors: true, map, polygonOffset: k !== 0, polygonOffsetFactor: - k, polygonOffsetUnits: - 2 * k, ...extra } );
+		const T = this.textures = makeTextures();
+		this.materials = {
+			ground: layer( 0, T.grass ), buildings: layer( 0, T.facade ), decor: layer( 0 ),
+			park: layer( 1, T.grass ), walk: layer( 2, T.sidewalk ), road: layer( 3, T.asphalt ),
+			line: layer( 4, null, T.dash ? { alphaMap: T.dash, alphaTest: 0.5 } : {} ),
+			plane: new THREE.MeshBasicMaterial( { vertexColors: true, polygonOffset: true, polygonOffsetFactor: 2, polygonOffsetUnits: 4 } ),
+			hills: new THREE.MeshBasicMaterial( { vertexColors: true } ),
+		};
 		this.city = null;
-		this.chunks = new Map();   // "i,j" -> { mesh (la base, para la física), meshes (todas las capas), i, j, cx, cz }
+		this.chunks = new Map();   // "i,j" -> { rays (las capas que responden la física), meshes (todas), i, j, cx, cz }
 		this._all = [];
 		this._since = 1;
 		this.error = null;
 		this.roadsData = null; this.buildingsData = null;
 		this.roadsError = null; this.buildingsError = null;
-		this.built = 0; this.buildMs = 0;
+		this.built = 0; this.buildMs = 0; this.trees = 0; this.lamps = 0;
 		this.pending = 0;          // trozos por construir dentro del radio de carga
 		this.pendingNear = 0;      // trozos por construir dentro del radio que la carga espera
 		this.loadT = 0;
 		this.ground = this._mesh( groundPlane(), this.materials.plane );
+		// los cerros quedan dentro del alcance de la vista, entre la mitad y el 80 % del fondo, para que la bruma los suavice
+		this.hills = this._mesh( hillRing( far * 0.55, far * 0.8 ), this.materials.hills, false );
 		this._roads = fetchRoads( lat, lon, OPEN.roadsRadius ).then( r => { this.roadsData = r; return r; }, e => { this.roadsError = e; throw e; } );
 		const buildings = fetchBuildings( lat, lon, OPEN.buildingsRadius ).then( b => { this.buildingsData = b; }, e => { this.buildingsError = e; } );
 		Promise.allSettled( [ this._roads, buildings ] ).then( () => this._assemble() );
@@ -182,18 +214,19 @@ export class OpenWorld {
 
 			if ( performance.now() - t0 > budget && c.d > OPEN.readyRadius ) break;
 			const parts = buildOpenChunk( this.city, c.i, c.j );
-			const meshes = [];
-			let base = null;
+			const meshes = [], rays = [];
 			for ( const name of LAYERS ) {
 
-				const mesh = this._mesh( parts[ name ], this.materials[ name ], name === 'base' );
+				const ray = RAY_LAYERS.includes( name );
+				const mesh = this._mesh( parts[ name ], this.materials[ name ], ray );
 				if ( ! mesh ) continue;
 				meshes.push( mesh );
-				if ( name === 'base' ) base = mesh;
+				if ( ray ) rays.push( mesh );
 
 			}
 
-			this.chunks.set( `${ c.i },${ c.j }`, { mesh: base, meshes, i: c.i, j: c.j, cx: ( c.i + 0.5 ) * size, cz: ( c.j + 0.5 ) * size } );
+			this.trees += parts.trees; this.lamps += parts.lamps;
+			this.chunks.set( `${ c.i },${ c.j }`, { rays, meshes, i: c.i, j: c.j, cx: ( c.i + 0.5 ) * size, cz: ( c.j + 0.5 ) * size } );
 			this.built ++;
 			this.pending --;
 			if ( c.d < OPEN.readyRadius ) this.pendingNear --;
@@ -216,9 +249,13 @@ export class OpenWorld {
 				const d = Math.hypot( c.cx - focus.x, c.cz - focus.z );
 				if ( d > OPEN.dropRadius ) { for ( const m of c.meshes ) { this.group.remove( m ); m.geometry.dispose(); } this.chunks.delete( k ); continue; }
 				for ( const m of c.meshes ) m.visible = d < OPEN.showRadius;
-				all.push( c.mesh );
-				c.mesh.userData.rs.dist = d;
-				if ( d < OPEN.nearRadius + size * 0.71 ) near.push( c.mesh );
+				for ( const m of c.rays ) {
+
+					all.push( m );
+					m.userData.rs.dist = d;
+					if ( d < OPEN.nearRadius + size * 0.71 ) near.push( m );
+
+				}
 
 			}
 
@@ -260,7 +297,8 @@ export class OpenWorld {
 
 		return { visibles: this.chunks.size, activas: this.chunks.size, descargando: this.pending, fallidas: this.buildingsError ? 1 : 0, rechazadas: 0, cacheMB: 0,
 			cercanas: this.field.meshes.length, rayos: this.field.rays, bvh: this.field.builds, bvhMs: this.field.buildMs,
-			edificios: this.city ? this.city.buildings.length : 0, vias: this.city ? this.city.ways.length : 0 };
+			edificios: this.city ? this.city.buildings.length : 0, vias: this.city ? this.city.ways.length : 0,
+			manchas: this.city ? this.city.greens.length : 0, arbolesOSM: this.city ? this.city.trees.length : 0, arboles: this.trees, faroles: this.lamps };
 
 	}
 
@@ -274,6 +312,7 @@ export class OpenWorld {
 		for ( const c of this.chunks.values() ) for ( const m of c.meshes ) m.geometry.dispose();
 		this.chunks.clear();
 		this.ground.geometry.dispose();
+		this.hills.geometry.dispose();
 		for ( const m of Object.values( this.materials ) ) m.dispose();
 		for ( const t of Object.values( this.textures ) ) if ( t ) t.dispose();
 

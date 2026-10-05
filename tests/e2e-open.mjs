@@ -46,6 +46,7 @@ R.check( 'El camión aparece sobre el suelo plano, en una calle', s.truck.ground
 R.check( 'Hay red vial y un encargo ofrecido', s.graph > 50 && s.jobs && s.jobs.state === 'offer', `${ s.graph } nodos` );
 const st = await page.evaluate( () => { const w = window.__rutaSur.world; return { ...w.stats(), kind: w.kind, provider: w.provider, credit: document.getElementById( 'a-logo' ).textContent }; } );
 R.check( 'La ciudad trae los edificios y las vías de OpenStreetMap', st.kind === 'open' && st.edificios > 100 && st.vias > 40, `${ st.edificios } edificios, ${ st.vias } vías, ${ st.visibles } trozos` );
+R.check( 'Y la ambientación: plazas, árboles mapeados y de vereda, faroles', st.manchas > 10 && st.arbolesOSM > 10 && st.arboles > 50 && st.faroles > 0, `${ st.manchas } manchas, ${ st.arbolesOSM } árboles mapeados, ${ st.arboles } árboles dibujados, ${ st.faroles } faroles` );
 R.check( 'La atribución nombra a OpenStreetMap', /OpenStreetMap/.test( st.provider ) && /OpenStreetMap/.test( st.credit ), st.credit );
 await sleep( page, 2500 );
 await page.screenshot( { path: `${ SHOTS }/abierto-01-cabina.png` } );

@@ -3,7 +3,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { signedArea, triangulate, prism, openCity, chunkIndex, buildOpenChunk, groundPlane, chunkOf, hashId, ROAD_WIDTH, OPEN, LAYERS, TEXTURE_METERS } from '../src/openmap.js';
+import { signedArea, triangulate, prism, openCity, chunkIndex, buildOpenChunk, groundPlane, hillRing, chunkOf, hashId, ROAD_WIDTH, OPEN, LAYERS, TEXTURE_METERS } from '../src/openmap.js';
 import { buildingHeight, buildingsQuery } from '../src/osm.js';
 import { MeshBuilder } from '../src/testcity.js';
 import { Geo } from '../src/geo.js';
@@ -89,11 +89,13 @@ const triArea = ( poly, tris ) => { let a = 0; for ( let i = 0; i < tris.length;
 	const roads = JSON.parse( readFileSync( resolve( root, 'tests/fixtures/temuco-centro.json' ), 'utf8' ) );
 	const geo = new Geo( - 38.739141, - 72.590355, 0 );
 	const buildings = syntheticBuildings( roads, geo );
-	report( 'La muestra sintética tiene edificios con plantas cerradas', buildings.elements.length > 100 && buildings.elements.every( e => e.geometry[ 0 ].lat === e.geometry[ e.geometry.length - 1 ].lat ), `${ buildings.elements.length } edificios` );
+	const bWays = buildings.elements.filter( e => e.tags.building ), gWays = buildings.elements.filter( e => e.tags.leisure || e.tags.natural === 'water' ), tNodes = buildings.elements.filter( e => e.type === 'node' );
+	report( 'La muestra sintética tiene edificios con plantas cerradas, plazas, agua y árboles', bWays.length > 100 && gWays.length > 10 && tNodes.length > 10 && bWays.every( e => e.geometry[ 0 ].lat === e.geometry[ e.geometry.length - 1 ].lat ), `${ bWays.length } edificios, ${ gWays.length } manchas, ${ tNodes.length } árboles` );
 	const city = openCity( roads, buildings, geo );
+	report( 'Las manchas y los árboles mapeados pasan a la ciudad con su tipo', city.greens.length === gWays.length && city.trees.length === tNodes.length && city.greens.some( g => g.kind === 'water' ) && city.greens.some( g => g.kind === 'green' ), `${ city.greens.length } manchas, ${ city.trees.length } árboles` );
 	const known = roads.elements.filter( e => ROAD_WIDTH[ e.tags.highway ] ).length;
 	report( 'Cada vía con clase conocida se convierte en una franja', city.ways.length === known && city.ways.every( w => w.pts.length >= 2 && w.width > 0 ), `${ city.ways.length } vías` );
-	report( 'Cada edificio pierde el punto repetido del cierre y tiene altura y color', city.buildings.length === buildings.elements.length && city.buildings.every( ( b, i ) => b.poly.length === buildings.elements[ i ].geometry.length - 1 && b.h > 2 && b.color.length === 3 ) );
+	report( 'Cada edificio pierde el punto repetido del cierre y tiene altura y color', city.buildings.length === bWays.length && city.buildings.every( ( b, i ) => b.poly.length === bWays[ i ].geometry.length - 1 && b.h > 2 && b.color.length === 3 ) );
 	const lShaped = city.buildings.filter( b => b.poly.length === 6 ).length;
 	report( 'Las plantas en L se conservan con sus seis esquinas', lShaped > 5, `${ lShaped }` );
 	const index = chunkIndex( city );
@@ -124,7 +126,35 @@ const triArea = ( poly, tris ) => { let a = 0; for ( let i = 0; i < tris.length;
 	let minY = Infinity, maxY = - Infinity;
 	for ( let k = 1; k < m.positions.length; k += 3 ) { minY = Math.min( minY, m.positions[ k ] ); maxY = Math.max( maxY, m.positions[ k ] ); }
 	report( 'El trozo del centro tiene suelo, calles y edificios', m.positions.length > 3 * 100 && m.indices.length % 3 === 0 && minY === - 0.5 && maxY > 3 && maxY < 300, `${ m.positions.length / 3 } vértices, ${ m.indices.length / 3 } triángulos, alturas de ${ minY } a ${ maxY.toFixed( 1 ) } m` );
-	report( 'Las capas van aparte: base con edificios, veredas, calzadas y líneas', parts.base.indices.length > 96 && parts.walk.indices.length > 0 && parts.road.indices.length > 0 && parts.walk.indices.length === parts.road.indices.length, LAYERS.map( n => `${ n } ${ parts[ n ].indices.length / 3 }` ).join( ', ' ) );
+	report( 'Las capas van aparte: suelo, edificios, manchas, veredas, calzadas, líneas y decoración', parts.ground.indices.length === 96 && parts.buildings.indices.length > 0 && parts.walk.indices.length > 0 && parts.road.indices.length > 0 && parts.walk.indices.length === parts.road.indices.length && parts.decor.indices.length > 0 && parts.trees > 0, LAYERS.map( n => `${ n } ${ parts[ n ].indices.length / 3 }` ).join( ', ' ) + `, ${ parts.trees } árboles, ${ parts.lamps } faroles` );
+	// un trozo con una plaza de la muestra: lleva la mancha y árboles adentro
+	const gi = city.greens.findIndex( g => g.kind === 'green' ), gp = city.greens[ gi ];
+	const gParts = buildOpenChunk( city, chunkOf( gp.cx ), chunkOf( gp.cz ) );
+	report( 'Una plaza se dibuja como mancha verde y recibe árboles', gParts.park.indices.length >= 6 && gParts.trees >= 2, `${ gParts.park.indices.length / 3 } triángulos de mancha, ${ gParts.trees } árboles` );
+	// las fachadas llevan celdas de ventana enteras: u de 0 a un entero por pared
+	{
+
+		const uv = parts.buildings.uvs, P = parts.buildings.positions;
+		let whole = true, cells = 0;
+		for ( let q = 0; q + 3 < P.length / 3 && cells < 50; q += 4 ) {
+
+			const u1 = uv[ ( q + 1 ) * 2 ];
+			if ( Math.abs( uv[ q * 2 ] - 0.02 ) < 1e-6 ) break; // llegó al techo (en punto flotante de 32 bits)
+			if ( ! Number.isInteger( u1 ) || u1 < 1 ) whole = false;
+			cells ++;
+
+		}
+
+		report( 'Las paredes llevan celdas de ventana enteras', cells > 0 && whole, `${ cells } paredes revisadas` );
+
+	}
+
+	// faroles: solo en vías anchas; en algún trozo con una vía principal los hay
+	let lamps = 0;
+	for ( const w of city.ways ) if ( w.width >= 8 ) { lamps += buildOpenChunk( city, chunkOf( w.pts[ 0 ].x ), chunkOf( w.pts[ 0 ].z ) ).lamps; if ( lamps ) break; }
+	report( 'Las vías terciarias y mayores llevan faroles', lamps > 0, `${ lamps }` );
+	const hills = hillRing( 1000, 1500, 60 );
+	report( 'Los cerros del horizonte son un anillo cerrado con alturas variadas', hills.positions.length === 60 * 3 * 3 && hills.indices.length === 60 * 2 * 6 && Math.max( ...[ ...hills.positions ].filter( ( v, i ) => i % 3 === 1 ) ) > 100 );
 	// coordenadas de textura de la calzada: u cruza la franja (0 o 1) y v avanza en metros / TEXTURE_METERS
 	{
 
@@ -158,7 +188,7 @@ const triArea = ( poly, tris ) => { let a = 0; for ( let i = 0; i < tris.length;
 
 	report( 'Suelo, calles y techos miran hacia arriba', flat > 50 && down === 0, `${ flat } triángulos horizontales, ${ down } al revés` );
 	const empty = buildOpenChunk( city, 500, 500 );
-	report( 'Un trozo sin datos es solo suelo', empty.base.positions.length === 25 * 3 && empty.base.indices.length === 16 * 6 && empty.walk.indices.length === 0 && empty.road.indices.length === 0 );
+	report( 'Un trozo sin datos es solo suelo', empty.ground.positions.length === 25 * 3 && empty.ground.indices.length === 16 * 6 && empty.walk.indices.length === 0 && empty.road.indices.length === 0 && empty.decor.indices.length === 0 );
 	const g = groundPlane( 1000 );
 	report( 'El suelo plano es un cuadrado', g.positions.length === 12 && g.indices.length === 6 );
 	report( 'Los radios de carga están ordenados', OPEN.readyRadius < OPEN.buildRadius && OPEN.buildRadius < OPEN.showRadius && OPEN.showRadius < OPEN.dropRadius );

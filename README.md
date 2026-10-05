@@ -71,9 +71,14 @@ El mundo principal del juego no usa fotografía. Las calles salen de la misma co
 
 Mientras se maneja se puede escuchar una radio chilena con transmisión gratuita por internet: ADN, Cooperativa y Futuro vienen en la lista, y en la pausa se puede pegar la dirección de cualquier otra transmisión (una `https://` que el navegador sepa reproducir, como un `icecast` o un `.aac`). La tecla X pasa a la emisora siguiente y la tecla M silencia todo. El juego solo reproduce la transmisión pública con el elemento de audio del navegador; no la guarda ni la retransmite. Las direcciones son las que publican las emisoras y aparecen en catálogos públicos de radios chilenas (`src/radio.js`); pueden cambiar sin aviso, y el juego avisa en pantalla cuando una no responde. Radio Punto 7 no está en la lista porque no se encontró una dirección pública de su transmisión; si la conoces, va por el campo de la pausa.
 
-### Textura del pavimento
+### Ambientación
 
-La calzada y la vereda del mapa abierto llevan una textura de grano dibujada en un lienzo al abrir el juego: asfalto con piedras claras y veredas de baldosas. Es una textura de luminancia que el color de cada vértice tiñe, y se repite cada 6 m a lo largo de la calle gracias a las coordenadas de textura de cada franja, acumuladas tramo a tramo para que no se corte en las esquinas.
+Todo lo que viste el mapa abierto sale de datos abiertos o se genera en el momento; nada se descarga aparte.
+
+- **Texturas.** La calzada, la vereda, el pasto y las fachadas llevan texturas de grano dibujadas en un lienzo al abrir el juego: asfalto con piedras claras, veredas de baldosas, pasto moteado y fachadas con una ventana por celda de 4 m por piso. Son texturas de luminancia que el color de cada vértice tiñe. Las de las calles se repiten cada 6 m a lo largo, con coordenadas acumuladas tramo a tramo para que no se corten en las esquinas; las de las paredes cuentan celdas enteras por pared, así ninguna ventana queda partida. La línea central va discontinua, con una textura de transparencia.
+- **Plazas, parques y agua.** La misma consulta que trae los edificios pide las áreas verdes (`leisure`, `landuse`, `natural`) y el agua (`natural=water`, riberas). Se dibujan como manchas sobre el suelo. Los bosques y parques reciben árboles repartidos por adentro, más densos en los bosques.
+- **Árboles y faroles.** Los árboles que OpenStreetMap tiene mapeados uno por uno (`natural=tree`) aparecen donde están. Además, las calles de 7 m o más reciben árboles de vereda cada 16 m, con huecos al azar, y las vías de 8 m o más (terciarias y mayores) faroles cada 34 m alternando de lado. Ninguno se planta sobre un edificio, sobre el agua ni en un cruce. Los árboles y faroles son decorativos: el camión los atraviesa, para que una vereda angosta no deje atascado el reparto.
+- **Cerros.** Una línea de lomas brumosas rodea la ciudad en el horizonte, a la distancia que la calidad elegida alcanza a dibujar. Es decorativa: no sale de ningún modelo de elevación, y por eso no coincide con los cerros reales.
 
 ### Choques
 
@@ -89,8 +94,8 @@ La red vial sale de la misma consulta a OpenStreetMap. Con ella el juego elige d
 
 ```
 npm install
-npm test          # pruebas numéricas, sin navegador (281 comprobaciones)
-npm run e2e       # el juego completo en Chromium sin interfaz, 166 comprobaciones (necesita: npm i -D playwright)
+npm test          # pruebas numéricas, sin navegador (286 comprobaciones)
+npm run e2e       # el juego completo en Chromium sin interfaz, 167 comprobaciones (necesita: npm i -D playwright)
 ```
 
 Las pruebas numéricas cubren el modelo del camión (radios de giro contra la teoría, corredor de giro de la norma europea, aceleración, frenado, pendientes, caja de cambios, bajadas, choques frontales y laterales), la geodesia, la red vial, el mapa abierto (triangulación, prismas, trozos, memoria de edificios) y los encargos. `tests/osm-real.test.mjs` usa una muestra real del centro de Temuco (`tests/fixtures/temuco-centro.json`, © OpenStreetMap contributors, ODbL). El entorno de desarrollo no llega a Overpass, así que no hay una muestra real de edificios: `tests/open-fixture.mjs` reparte plantas sintéticas en las manzanas de esa muestra, con las etiquetas que usa el juego.
@@ -121,7 +126,7 @@ Verificado solo contra simulaciones:
 
 - Las sondas de choque van a un metro del suelo. Un balcón o un letrero más alto no detiene al camión, y un auto estacionado sí. Los puntos de cada costado van cada 4,5 m: un poste muy delgado puede entrar entre dos sin que la arista lo note hasta que un punto lo alcanza.
 - Los espejos solo se dibujan en la vista de cabina.
-- En el mapa abierto el suelo es plano: no hay relieve, soleras ni árboles. Los edificios dibujados en OpenStreetMap como relaciones (con patio interior o en varias partes) no aparecen, y los que no declaran altura ni pisos reciben una altura típica de su tipo. Las calles se dibujan con un ancho fijo por clase, sin carriles ni cruces resueltos.
+- En el mapa abierto el suelo es plano: no hay relieve ni soleras, y los cerros del horizonte son decorativos. Los edificios y las áreas dibujados en OpenStreetMap como relaciones (con patio interior o en varias partes) no aparecen, y los edificios que no declaran altura ni pisos reciben una altura típica de su tipo. Las calles se dibujan con un ancho fijo por clase, sin carriles ni cruces resueltos. Los árboles y faroles no chocan.
 - El juego supone tránsito por la derecha.
 - La red vial ignora las restricciones de giro de OpenStreetMap (son relaciones, y la consulta trae solo vías).
 - Sin calles en un radio de 2,5 km, o si Overpass no responde, el juego queda en modo libre, sin encargos. Si la respuesta llega tarde, los encargos aparecen durante la partida.
@@ -147,6 +152,11 @@ Verificado solo contra simulaciones:
 El código de Ruta Sur se publica bajo la licencia MIT (ver `LICENSE`). Las obras incluidas conservan sus propias licencias, listadas arriba.
 
 ## Cambios
+
+**0.7.0**
+
+- Ambientación del mapa abierto: fachadas con ventanas, pasto con textura, plazas, parques y agua desde OpenStreetMap, árboles mapeados y de vereda, faroles en las vías principales, línea central discontinua y cerros brumosos en el horizonte.
+- La memoria local de edificios cambia de formato (guarda también manchas y árboles); la anterior se borra sola.
 
 **0.6.0**
 

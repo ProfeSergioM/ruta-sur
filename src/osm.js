@@ -42,13 +42,33 @@ out body geom qt;`;
 
 }
 
-// Edificios: cada vía cerrada con etiqueta "building", con sus etiquetas y su geometría.
-// Los edificios dibujados como relaciones (patios interiores, varias partes) quedan fuera.
+// Edificios y ambientación: cada vía cerrada con etiqueta "building", las áreas verdes
+// (plazas, parques, bosques, pasto), el agua y los árboles mapeados uno por uno, con sus
+// etiquetas y su geometría. Lo dibujado como relación (patios interiores, varias partes) queda fuera.
 export function buildingsQuery( lat, lon, radius ) {
 
+	const at = `(around:${ Math.round( radius ) },${ lat.toFixed( 6 ) },${ lon.toFixed( 6 ) })`;
 	return `[out:json][timeout:40];
-way["building"](around:${ Math.round( radius ) },${ lat.toFixed( 6 ) },${ lon.toFixed( 6 ) });
+(
+  way["building"]${ at };
+  way["leisure"~"^(park|garden|pitch|playground|dog_park|nature_reserve|golf_course)$"]${ at };
+  way["landuse"~"^(grass|forest|meadow|recreation_ground|cemetery|village_green|orchard|vineyard|farmland|greenfield)$"]${ at };
+  way["natural"~"^(wood|water|scrub|grassland|heath|wetland)$"]${ at };
+  way["waterway"~"^(riverbank|dock)$"]${ at };
+  node["natural"="tree"]${ at };
+);
 out tags geom qt;`;
+
+}
+
+// Qué es cada elemento de esa respuesta: edificio, área verde, agua o árbol
+export function featureKind( tags = {} ) {
+
+	if ( tags.building ) return 'building';
+	if ( tags.natural === 'water' || tags.waterway ) return 'water';
+	if ( tags.natural === 'tree' ) return 'tree';
+	if ( tags.leisure || tags.landuse || tags.natural ) return 'green';
+	return null;
 
 }
 
