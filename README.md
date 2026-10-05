@@ -55,7 +55,7 @@ Con pantalla táctil aparecen botones en pantalla, y la guía de despacho se toc
 
 ## Cómo está hecho
 
-El juego es un solo archivo HTML sin dependencias externas. `tools/build.mjs` une con esbuild los módulos de `src/` y las bibliotecas (Three.js, 3d-tiles-renderer y three-mesh-bvh), agrega el decodificador Draco y las tipografías, y lo inserta todo en `src/index.template.html`. El resultado, `docs/index.html`, pesa cerca de 1,4 MB. GitHub Pages publica la carpeta `docs/` tal cual, así que ese archivo es a la vez el juego en línea y el que se puede descargar.
+El juego es un solo archivo HTML sin dependencias externas. `tools/build.mjs` une con esbuild los módulos de `src/` y las bibliotecas (Three.js, 3d-tiles-renderer y three-mesh-bvh), agrega el decodificador Draco y las tipografías, y lo inserta todo en `src/index.template.html`. El resultado, `docs/index.html`, pesa cerca de 1,4 MB. GitHub Pages publica la carpeta `docs/` tal cual, así que ese archivo es a la vez el juego en línea y el que se puede descargar. La raíz del repositorio lleva un `index.html` que redirige a `docs/` y un `.nojekyll`, por si Pages quedara configurado para publicar la raíz: sin ellos, GitHub mostraría el README en lugar del juego.
 
 La primera versión pedía las bibliotecas y las tipografías a servidores externos al abrirse. Bastaba que esos pedidos estuvieran bloqueados, como ocurre en la vista previa de una aplicación, para que la página quedara sin programa. Por eso ahora todo viaja en el archivo.
 
