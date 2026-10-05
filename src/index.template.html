@@ -256,6 +256,14 @@ legend { font: 800 12px/1 var(--f-senal); letter-spacing: 0.14em; text-transform
 .preventiva .boton.secundario:hover { background: rgba( 20, 23, 26, 0.14 ); }
 .preventiva :focus-visible { outline-color: var(--asfalto); }
 #falla, #sin-motor { z-index: 20; background: rgba( 20, 23, 26, 0.86 ); }
+/* radio en la pausa */
+#pausa .radio { margin-top: 18px; padding-top: 12px; border-top: 1px dashed rgba( 244, 241, 230, 0.3 ); }
+#pausa .radio h3 { font: 800 12px/1 var(--f-senal); letter-spacing: 0.14em; text-transform: uppercase; margin: 0 0 8px; opacity: 0.85; }
+#pausa .radio .fichas { display: flex; flex-wrap: wrap; gap: 8px; }
+#pausa .radio .boton.chica { padding: 7px 12px 5px; font-size: 13px; }
+#pausa .radio .boton.marcado { background: var(--linea); color: var(--asfalto); border-color: var(--linea); }
+#pausa .radio .campo { margin-top: 10px; }
+#pausa .radio .nota { margin: 8px 0 0; }
 /* Sin programa en marcha (la vista no ejecuta scripts), queda solo el aviso. */
 html.js #sin-motor { display: none; }
 html:not( .js ) #menu, html:not( .js ) #view { display: none; }
@@ -636,6 +644,7 @@ html:not( .js ) #menu, html:not( .js ) #view { display: none; }
 					<dt>C</dt><dd>Cámara: cabina, exterior, cenital</dd>
 					<dt>Q · E · arrastrar</dt><dd>Mirar a los lados</dd>
 					<dt>V</dt><dd>Espejos en pantalla</dd>
+					<dt>X</dt><dd>Radio: la emisora siguiente</dd>
 					<dt>Enter · N</dt><dd>Aceptar el encargo · pedir otro</dd>
 					<dt>R</dt><dd>Volver a la calle más cercana</dd>
 					<dt>G</dt><dd>Activar o desactivar los choques</dd>
@@ -661,11 +670,19 @@ html:not( .js ) #menu, html:not( .js ) #view { display: none; }
 			<dt>C</dt><dd>Cámara: cabina, exterior, cenital</dd>
 			<dt>Q · E · arrastrar</dt><dd>Mirar a los lados</dd>
 			<dt>V</dt><dd>Espejos en pantalla</dd>
+			<dt>X</dt><dd>Radio: la emisora siguiente</dd>
 			<dt>Enter · N</dt><dd>Aceptar el encargo · pedir otro</dd>
 			<dt>R</dt><dd>Volver a la calle más cercana</dd>
 			<dt>G</dt><dd>Activar o desactivar los choques</dd>
 			<dt>M · F3</dt><dd>Sonido · datos técnicos</dd>
 		</dl>
+		<div class="radio">
+			<h3>Radio</h3>
+			<div class="fichas" id="radios"></div>
+			<p class="nota" id="radio-estado">Radio apagada</p>
+			<input class="campo" id="radio-url" type="url" placeholder="O pega la dirección de otra transmisión (https://…)" spellcheck="false" autocomplete="off" aria-label="Dirección de otra transmisión de radio">
+			<p class="nota">Emisoras chilenas con transmisión gratuita por internet. Las direcciones las publican las emisoras y pueden cambiar.</p>
+		</div>
 		<div class="acciones">
 			<button class="boton" type="button" id="seguir">Seguir</button>
 			<button class="boton secundario" type="button" id="p-otro">Pedir otro encargo</button>

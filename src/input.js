@@ -9,7 +9,7 @@ const KEYS = {
 
 const ACTIONS = {
 	KeyC: 'camera', KeyR: 'reset', KeyG: 'ghost', KeyM: 'mute', KeyH: 'help', Escape: 'pause',
-	Enter: 'accept', NumpadEnter: 'accept', KeyN: 'skip', F3: 'debug', KeyP: 'pause', KeyV: 'mirrors',
+	Enter: 'accept', NumpadEnter: 'accept', KeyN: 'skip', F3: 'debug', KeyP: 'pause', KeyV: 'mirrors', KeyX: 'radio',
 };
 
 export class Input {

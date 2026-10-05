@@ -29,6 +29,7 @@ En un marco aislado tampoco hay almacenamiento: la caja de los encargos y las ca
 | C | Cámara: cabina, exterior, cenital |
 | Q, E o arrastrar | Mirar a los lados |
 | V | Espejos en pantalla: mostrar u ocultar los recuadros |
+| X | Radio: la emisora siguiente (en la pausa se elige una o se pega otra dirección) |
 | Enter, N | Aceptar el encargo, pedir otro |
 | R | Volver a la calle más cercana |
 | G | Activar o desactivar los choques |
@@ -51,6 +52,7 @@ La primera versión pedía las bibliotecas y las tipografías a servidores exter
 | `jobs.js` | Encargos: carga, destino, pago, bono de puntualidad, descuento por daño |
 | `geo.js` | Conversión entre latitud y longitud y las coordenadas del juego (WGS84) |
 | `truck-model.js`, `hud.js`, `audio.js`, `input.js` | Modelo 3D del camión, tablero y minimapa, sonido sintetizado, teclado, táctil y mando |
+| `radio.js` | Radios chilenas por internet: lista de emisoras, reproducción con el elemento de audio y una dirección propia |
 | `mirrors.js` | Espejos retrovisores: una cámara por espejo dibuja en una textura que va en el vidrio de la cabina y en los recuadros de la pantalla |
 | `openmap.js` | Mapa abierto: convierte las calles y los edificios de OpenStreetMap en franjas de asfalto con vereda y prismas de colores, por trozos. Triangula las plantas por recorte de orejas. No depende de Three.js |
 | `openworld.js` | El mundo del mapa abierto: pide calles y edificios a Overpass, levanta los trozos alrededor del camión y responde los rayos de la física |
@@ -64,6 +66,14 @@ Convención de ejes: +X al oeste, +Y arriba, +Z al norte, con origen en el punto
 ### Mapa abierto
 
 El mundo principal del juego no usa fotografía. Las calles salen de la misma consulta a Overpass que la red vial, y se dibujan como franjas de asfalto con una vereda a cada lado y el ancho típico de su clase (una residencial, 7 m; una primaria, 10 m). Los edificios salen de una segunda consulta, de las vías cerradas con etiqueta `building` en 1,5 km alrededor del punto elegido, y se extruyen desde su planta: con la altura que OSM declare (`height`), o con los pisos (`building:levels`, a 3,2 m cada uno), o con una altura típica de su tipo (una casa, 5,5 m; un edificio de departamentos, 15 m), dispersa un poco para que una cuadra no salga pareja. Las plantas cóncavas se triangulan por recorte de orejas. El suelo es plano. Todo se arma por trozos de 120 m alrededor del camión, con un BVH por trozo para la física, y los trozos lejanos se liberan. Los edificios se guardan en el navegador dos semanas, como las calles.
+
+### Radio
+
+Mientras se maneja se puede escuchar una radio chilena con transmisión gratuita por internet: ADN, Cooperativa y Futuro vienen en la lista, y en la pausa se puede pegar la dirección de cualquier otra transmisión (una `https://` que el navegador sepa reproducir, como un `icecast` o un `.aac`). La tecla X pasa a la emisora siguiente y la tecla M silencia todo. El juego solo reproduce la transmisión pública con el elemento de audio del navegador; no la guarda ni la retransmite. Las direcciones son las que publican las emisoras y aparecen en catálogos públicos de radios chilenas (`src/radio.js`); pueden cambiar sin aviso, y el juego avisa en pantalla cuando una no responde. Radio Punto 7 no está en la lista porque no se encontró una dirección pública de su transmisión; si la conoces, va por el campo de la pausa.
+
+### Textura del pavimento
+
+La calzada y la vereda del mapa abierto llevan una textura de grano dibujada en un lienzo al abrir el juego: asfalto con piedras claras y veredas de baldosas. Es una textura de luminancia que el color de cada vértice tiñe, y se repite cada 6 m a lo largo de la calle gracias a las coordenadas de textura de cada franja, acumuladas tramo a tramo para que no se corte en las esquinas.
 
 ### Choques
 
@@ -79,8 +89,8 @@ La red vial sale de la misma consulta a OpenStreetMap. Con ella el juego elige d
 
 ```
 npm install
-npm test          # pruebas numéricas, sin navegador (280 comprobaciones)
-npm run e2e       # el juego completo en Chromium sin interfaz, 158 comprobaciones (necesita: npm i -D playwright)
+npm test          # pruebas numéricas, sin navegador (281 comprobaciones)
+npm run e2e       # el juego completo en Chromium sin interfaz, 166 comprobaciones (necesita: npm i -D playwright)
 ```
 
 Las pruebas numéricas cubren el modelo del camión (radios de giro contra la teoría, corredor de giro de la norma europea, aceleración, frenado, pendientes, caja de cambios, bajadas, choques frontales y laterales), la geodesia, la red vial, el mapa abierto (triangulación, prismas, trozos, memoria de edificios) y los encargos. `tests/osm-real.test.mjs` usa una muestra real del centro de Temuco (`tests/fixtures/temuco-centro.json`, © OpenStreetMap contributors, ODbL). El entorno de desarrollo no llega a Overpass, así que no hay una muestra real de edificios: `tests/open-fixture.mjs` reparte plantas sintéticas en las manzanas de esa muestra, con las etiquetas que usa el juego.
@@ -137,6 +147,11 @@ Verificado solo contra simulaciones:
 El código de Ruta Sur se publica bajo la licencia MIT (ver `LICENSE`). Las obras incluidas conservan sus propias licencias, listadas arriba.
 
 ## Cambios
+
+**0.6.0**
+
+- Radio: ADN, Cooperativa y Futuro mientras se maneja, con la tecla X o desde la pausa, y un campo para pegar otra transmisión.
+- Textura de grano en la calzada y de baldosas en las veredas del mapa abierto.
 
 **0.5.0**
 

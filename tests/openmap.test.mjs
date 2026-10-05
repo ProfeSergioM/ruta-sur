@@ -3,7 +3,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { signedArea, triangulate, prism, openCity, chunkIndex, buildOpenChunk, groundPlane, chunkOf, hashId, ROAD_WIDTH, OPEN, LAYERS } from '../src/openmap.js';
+import { signedArea, triangulate, prism, openCity, chunkIndex, buildOpenChunk, groundPlane, chunkOf, hashId, ROAD_WIDTH, OPEN, LAYERS, TEXTURE_METERS } from '../src/openmap.js';
 import { buildingHeight, buildingsQuery } from '../src/osm.js';
 import { MeshBuilder } from '../src/testcity.js';
 import { Geo } from '../src/geo.js';
@@ -125,6 +125,26 @@ const triArea = ( poly, tris ) => { let a = 0; for ( let i = 0; i < tris.length;
 	for ( let k = 1; k < m.positions.length; k += 3 ) { minY = Math.min( minY, m.positions[ k ] ); maxY = Math.max( maxY, m.positions[ k ] ); }
 	report( 'El trozo del centro tiene suelo, calles y edificios', m.positions.length > 3 * 100 && m.indices.length % 3 === 0 && minY === - 0.5 && maxY > 3 && maxY < 300, `${ m.positions.length / 3 } vértices, ${ m.indices.length / 3 } triángulos, alturas de ${ minY } a ${ maxY.toFixed( 1 ) } m` );
 	report( 'Las capas van aparte: base con edificios, veredas, calzadas y líneas', parts.base.indices.length > 96 && parts.walk.indices.length > 0 && parts.road.indices.length > 0 && parts.walk.indices.length === parts.road.indices.length, LAYERS.map( n => `${ n } ${ parts[ n ].indices.length / 3 }` ).join( ', ' ) );
+	// coordenadas de textura de la calzada: u cruza la franja (0 o 1) y v avanza en metros / TEXTURE_METERS
+	{
+
+		const uv = parts.road.uvs, P = parts.road.positions;
+		let us = new Set(), spanOk = true, n = 0;
+		for ( let q = 0; q + 3 < P.length / 3; q += 4 ) {
+
+			// cada tramo aporta cuatro esquinas seguidas: a (u0,va), b (u0,vb), c (u1,vb), d (u1,va); los discos de los codos vienen después
+			const len = Math.hypot( P[ ( q + 1 ) * 3 ] - P[ q * 3 ], P[ ( q + 1 ) * 3 + 2 ] - P[ q * 3 + 2 ] );
+			const dv = uv[ ( q + 1 ) * 2 + 1 ] - uv[ q * 2 + 1 ];
+			if ( uv[ q * 2 ] !== 0 || uv[ ( q + 2 ) * 2 ] !== 1 ) { us.add( uv[ q * 2 ] ); continue; }
+			n ++;
+			if ( Math.abs( dv - len / TEXTURE_METERS ) > 1e-3 ) spanOk = false;
+			break;
+
+		}
+
+		report( 'La calzada lleva coordenadas de textura: u de 0 a 1 y v en metros a lo largo', uv.length === P.length / 3 * 2 && n === 1 && spanOk );
+
+	}
 	// todo lo horizontal (suelo, veredas, calzadas, líneas, techos) mira hacia arriba
 	let down = 0, flat = 0;
 	for ( let k = 0; k < m.indices.length; k += 3 ) {

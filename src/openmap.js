@@ -157,27 +157,35 @@ export function prism( mb, poly, y0, y1, col, roofShade = 0.8 ) {
 
 }
 
-// Franja plana a lo largo de una polilínea, con discos en los vértices interiores para cerrar los codos
-function strip( mb, pts, width, y, col ) {
+export const TEXTURE_METERS = 6; // la textura de las calles se repite cada tantos metros a lo largo
+
+// Franja plana a lo largo de una polilínea, con discos en los vértices interiores para
+// cerrar los codos. Coordenadas de textura: u cruza la franja de 0 a 1 y v avanza en
+// metros a lo largo, dividido por TEXTURE_METERS, así la textura no se estira.
+function strip( mb, pts, width, y, col, v0 = 0 ) {
 
 	const w = width / 2;
+	let along = v0;
 	for ( let i = 0; i < pts.length - 1; i ++ ) {
 
 		const p = pts[ i ], q = pts[ i + 1 ];
 		const dx = q.x - p.x, dz = q.z - p.z, len = Math.hypot( dx, dz );
 		if ( len < 1e-6 ) continue;
 		const nx = - dz / len * w, nz = dx / len * w;
-		const a = mb.vertex( p.x + nx, y, p.z + nz, col ), b = mb.vertex( q.x + nx, y, q.z + nz, col );
-		const c = mb.vertex( q.x - nx, y, q.z - nz, col ), d = mb.vertex( p.x - nx, y, p.z - nz, col );
+		const va = along / TEXTURE_METERS, vb = ( along + len ) / TEXTURE_METERS;
+		const a = mb.vertex( p.x + nx, y, p.z + nz, col, 1, 0, va ), b = mb.vertex( q.x + nx, y, q.z + nz, col, 1, 0, vb );
+		const c = mb.vertex( q.x - nx, y, q.z - nz, col, 1, 1, vb ), d = mb.vertex( p.x - nx, y, p.z - nz, col, 1, 1, va );
 		// mira hacia arriba (el orden importa: la cara de atrás no se dibuja)
 		mb.quad( a, b, c, d );
 		if ( i > 0 && w > 0.4 ) {
 
-			const center = mb.vertex( p.x, y, p.z, col ), ring = [];
-			for ( let k = 0; k < 8; k ++ ) { const th = Math.PI * 2 * k / 8; ring.push( mb.vertex( p.x + Math.cos( th ) * w, y, p.z + Math.sin( th ) * w, col ) ); }
+			const center = mb.vertex( p.x, y, p.z, col, 1, 0.5, va ), ring = [];
+			for ( let k = 0; k < 8; k ++ ) { const th = Math.PI * 2 * k / 8; ring.push( mb.vertex( p.x + Math.cos( th ) * w, y, p.z + Math.sin( th ) * w, col, 1, 0.5 + 0.5 * Math.cos( th ), va + 0.5 * Math.sin( th ) * w / TEXTURE_METERS ) ); }
 			for ( let k = 0; k < 8; k ++ ) mb.tri( center, ring[ ( k + 1 ) % 8 ], ring[ k ] );
 
 		}
+
+		along += len;
 
 	}
 
@@ -199,7 +207,10 @@ export function openCity( roads, buildings, geo ) {
 		const pts = e.geometry.filter( Boolean ).map( pt );
 		if ( pts.length < 2 ) continue;
 		const cls = ROAD_CLASSES[ e.tags.highway ];
-		ways.push( { id: e.id, pts, width, line: ! e.tags.oneway && cls && cls.rank <= 6 && width >= 7 } );
+		// distancia acumulada hasta cada punto, para que la textura siga de un tramo al otro
+		const along = [ 0 ];
+		for ( let i = 1; i < pts.length; i ++ ) along.push( along[ i - 1 ] + Math.hypot( pts[ i ].x - pts[ i - 1 ].x, pts[ i ].z - pts[ i - 1 ].z ) );
+		ways.push( { id: e.id, pts, along, width, line: ! e.tags.oneway && cls && cls.rank <= 6 && width >= 7 } );
 
 	}
 
@@ -292,9 +303,10 @@ export function buildOpenChunk( city, i, j ) {
 	for ( let s = 0; s < segs.length; s += 2 ) {
 
 		const w = city.ways[ segs[ s ] ], k = segs[ s + 1 ], pts = [ w.pts[ k ], w.pts[ k + 1 ] ];
-		strip( walk, pts, w.width + 2 * SIDEWALK, 0.01, COLORS.sidewalk );
-		strip( road, pts, w.width, 0.02, COLORS.road );
-		if ( w.line ) strip( line, pts, 0.22, 0.03, COLORS.line );
+		const v0 = w.along ? w.along[ k ] : 0;
+		strip( walk, pts, w.width + 2 * SIDEWALK, 0.01, COLORS.sidewalk, v0 );
+		strip( road, pts, w.width, 0.02, COLORS.road, v0 );
+		if ( w.line ) strip( line, pts, 0.22, 0.03, COLORS.line, v0 );
 
 	}
 

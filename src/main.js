@@ -11,6 +11,7 @@ import { Jobs } from './jobs.js';
 import { Input } from './input.js';
 import { Sound } from './audio.js';
 import { Mirrors } from './mirrors.js';
+import { Radio } from './radio.js';
 import { compassFromYaw, compassName } from './geo.js';
 
 // La versión sale de package.json: tools/build.mjs la fija al armar el archivo.
@@ -143,6 +144,8 @@ const marker = new THREE.Group();
 // --------------------------------------------------------------------------
 const hud = new Hud();
 const sound = new Sound();
+// radios chilenas por internet; cada cambio de estado se muestra en pantalla y en la pausa
+const radio = new Radio( { onState: r => { hud.toast( r.label, r.state === 'error' ? 'alerta' : '', 2.5 ); syncRadioMenu(); } } );
 const game = {
 	version: VERSION,
 	state: 'menu',            // menu | loading | driving | paused
@@ -158,6 +161,7 @@ const game = {
 	timers: { hud: 0, map: 0, limit: 0, safe: 0, marker: 0, noGround: 0, reseat: 1, blocked: 0, side: 0, focus: 3 },
 };
 window.__rutaSur = game;
+game.radio = radio;
 
 const input = new Input( canvas, onAction );
 // con pantalla táctil no hay teclas: los textos nombran los gestos equivalentes
@@ -230,12 +234,53 @@ function buildMenu() {
 	$( 'p-calle' ).addEventListener( 'click', () => { setPaused( false ); onAction( 'reset' ); } );
 	$( 'p-choques' ).addEventListener( 'click', () => { setPaused( false ); onAction( 'ghost' ); } );
 	$( 'p-espejos' ).addEventListener( 'click', () => { setPaused( false ); onAction( 'mirrors' ); } );
+	buildRadioMenu();
 	$( 'p-otro' ).addEventListener( 'click', () => { setPaused( false ); onAction( 'skip' ); } );
 	$( 'salir' ).addEventListener( 'click', () => toMenu() );
 
 }
 
 const selected = name => { const el = document.querySelector( `input[name="${ name }"]:checked` ); return el ? el.value : null; };
+
+// Radio en la pausa: un botón por emisora, "apagada" y un campo para pegar otra dirección
+function buildRadioMenu() {
+
+	const host = $( 'radios' );
+	const make = ( label, station ) => {
+
+		const b = document.createElement( 'button' );
+		b.type = 'button'; b.className = 'boton secundario chica'; b.textContent = label;
+		b.dataset.radio = station ? station.id : 'off';
+		b.addEventListener( 'click', () => { if ( station ) radio.play( station ); else radio.stop(); } );
+		return b;
+
+	};
+
+	const fill = () => {
+
+		host.replaceChildren();
+		host.appendChild( make( 'Apagada', null ) );
+		for ( const s of radio.stations ) host.appendChild( make( s.name, s ) );
+		syncRadioMenu();
+
+	};
+
+	const url = $( 'radio-url' );
+	url.addEventListener( 'change', () => { url.value = radio.setCustom( url.value ); fill(); if ( radio.custom ) radio.play( radio.stations[ radio.stations.length - 1 ] ); } );
+	url.addEventListener( 'keydown', e => { if ( e.key === 'Enter' ) { e.preventDefault(); url.dispatchEvent( new Event( 'change' ) ); } } );
+	fill();
+
+}
+
+function syncRadioMenu() {
+
+	const host = $( 'radios' );
+	if ( ! host ) return;
+	const id = radio.current ? radio.current.id : 'off';
+	for ( const b of host.children ) b.classList.toggle( 'marcado', b.dataset.radio === id );
+	$( 'radio-estado' ).textContent = radio.label;
+
+}
 
 function menuError( text ) {
 
@@ -507,6 +552,7 @@ function toMenu() {
 
 	teardown();
 	sound.stop();
+	radio.stop();
 	game.state = 'menu';
 	$( 'menu' ).hidden = false; $( 'carga' ).hidden = true; $( 'pausa' ).hidden = true;
 	hud.show( false );
@@ -557,7 +603,8 @@ function onAction( name ) {
 			game.ghost = ! game.ghost;
 			hud.toast( game.ghost ? 'Choques desactivados: el camión atraviesa los obstáculos' : 'Choques activados', '', 3 );
 			break;
-		case 'mute': sound.setMuted( ! sound.muted ); hud.toast( sound.muted ? 'Sonido apagado' : 'Sonido encendido', '', 1.5 ); break;
+		case 'mute': sound.setMuted( ! sound.muted ); radio.setMuted( sound.muted ); hud.toast( sound.muted ? 'Sonido apagado' : 'Sonido encendido', '', 1.5 ); break;
+		case 'radio': radio.next(); if ( ! radio.current ) hud.toast( 'Radio apagada', '', 1.5 ); break;
 		case 'mirrors':
 			game.mirrorInsets = ! game.mirrorInsets;
 			$( 'espejos' ).hidden = ! ( game.cam.mode === 0 && game.mirrorInsets );

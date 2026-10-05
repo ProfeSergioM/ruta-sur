@@ -203,12 +203,14 @@ export function generateCity( seed = 7 ) {
 
 export class MeshBuilder {
 
-	constructor() { this.p = []; this.c = []; this.i = []; }
+	constructor() { this.p = []; this.c = []; this.i = []; this.t = []; }
 	get count() { return this.p.length / 3; }
-	vertex( x, y, z, col, shade = 1 ) {
+	// u y v son coordenadas de textura, para las capas que llevan una (las calles del mapa abierto)
+	vertex( x, y, z, col, shade = 1, u = 0, v = 0 ) {
 
 		this.p.push( x, y, z );
 		this.c.push( col[ 0 ] * shade, col[ 1 ] * shade, col[ 2 ] * shade );
+		this.t.push( u, v );
 		return this.p.length / 3 - 1;
 
 	}
@@ -284,7 +286,7 @@ export class MeshBuilder {
 
 	finish() {
 
-		return { positions: new Float32Array( this.p ), colors: new Float32Array( this.c ), indices: new Uint32Array( this.i ) };
+		return { positions: new Float32Array( this.p ), colors: new Float32Array( this.c ), indices: new Uint32Array( this.i ), uvs: new Float32Array( this.t ) };
 
 	}
 

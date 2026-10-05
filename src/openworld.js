@@ -10,6 +10,57 @@ import { Geo } from './geo.js';
 import { RayField, makeTerrain, longRay, nearRay, fetchRoads, fetchBuildings, viewBlocks, blockedListeners, BLOCKED_ADVICE } from './world.js';
 import { openCity, chunkIndex, buildOpenChunk, groundPlane, chunkOf, OPEN, LAYERS } from './openmap.js';
 
+// Texturas de grano dibujadas en un lienzo: valen como luminancia (alrededor del
+// blanco), y el color de cada vértice les da el tono. Sin documento (las pruebas
+// numéricas) no hay texturas y las capas quedan de color plano.
+function makeTextures() {
+
+	if ( typeof document === 'undefined' ) return { asphalt: null, sidewalk: null };
+	const hash = ( x, y ) => { const s = Math.sin( x * 12.9898 + y * 78.233 ) * 43758.5453; return s - Math.floor( s ); };
+	const make = ( size, paint ) => {
+
+		const c = document.createElement( 'canvas' );
+		c.width = c.height = size;
+		const g = c.getContext( '2d' );
+		if ( ! g ) return null;
+		const img = g.createImageData( size, size ), d = img.data;
+		for ( let y = 0; y < size; y ++ ) for ( let x = 0; x < size; x ++ ) {
+
+			const l = Math.max( 0, Math.min( 255, Math.round( 255 * paint( x, y ) ) ) ), i = ( y * size + x ) * 4;
+			d[ i ] = d[ i + 1 ] = d[ i + 2 ] = l; d[ i + 3 ] = 255;
+
+		}
+
+		g.putImageData( img, 0, 0 );
+		const t = new THREE.CanvasTexture( c );
+		t.wrapS = t.wrapT = THREE.RepeatWrapping;
+		t.colorSpace = THREE.SRGBColorSpace;
+		t.anisotropy = 4;
+		return t;
+
+	};
+
+	// asfalto: grano fino y algunas piedras más claras; los bordes de la franja, un poco más gastados
+	const asphalt = make( 128, ( x, y ) => {
+
+		const grain = 0.86 + 0.2 * hash( x, y );
+		const stone = hash( x * 3 + 7, y * 5 + 1 ) > 0.985 ? 0.25 : 0;
+		const edge = 1 + 0.06 * Math.cos( x / 128 * Math.PI * 2 );
+		return grain * edge + stone;
+
+	} );
+	// vereda: baldosas de 32 píxeles con junta oscura y un moteado suave
+	const sidewalk = make( 128, ( x, y ) => {
+
+		const joint = ( x % 32 === 0 || y % 32 === 0 ) ? 0.72 : 1;
+		const tile = 0.9 + 0.12 * hash( Math.floor( x / 32 ), Math.floor( y / 32 ) );
+		return ( 0.94 + 0.1 * hash( x + 3, y + 9 ) ) * tile * joint;
+
+	} );
+	return { asphalt, sidewalk };
+
+}
+
 export class OpenWorld {
 
 	constructor( { scene, lat, lon } ) {
@@ -25,8 +76,10 @@ export class OpenWorld {
 		scene.add( this.group );
 		// Cada capa se acerca un poco más a la cámara en profundidad (desplazamiento de
 		// polígono), así la calzada tapa la vereda y la vereda al suelo a cualquier distancia.
-		const layer = k => new THREE.MeshBasicMaterial( { vertexColors: true, polygonOffset: k !== 0, polygonOffsetFactor: - k, polygonOffsetUnits: - 2 * k } );
-		this.materials = { base: layer( 0 ), walk: layer( 1 ), road: layer( 2 ), line: layer( 3 ), plane: new THREE.MeshBasicMaterial( { vertexColors: true, polygonOffset: true, polygonOffsetFactor: 2, polygonOffsetUnits: 4 } ) };
+		// La calzada y la vereda llevan una textura de grano, que el color del vértice tiñe.
+		const layer = ( k, map = null ) => new THREE.MeshBasicMaterial( { vertexColors: true, map, polygonOffset: k !== 0, polygonOffsetFactor: - k, polygonOffsetUnits: - 2 * k } );
+		this.textures = makeTextures();
+		this.materials = { base: layer( 0 ), walk: layer( 1, this.textures.sidewalk ), road: layer( 2, this.textures.asphalt ), line: layer( 3 ), plane: new THREE.MeshBasicMaterial( { vertexColors: true, polygonOffset: true, polygonOffsetFactor: 2, polygonOffsetUnits: 4 } ) };
 		this.city = null;
 		this.chunks = new Map();   // "i,j" -> { mesh (la base, para la física), meshes (todas las capas), i, j, cx, cz }
 		this._all = [];
@@ -88,6 +141,7 @@ export class OpenWorld {
 		const g = new THREE.BufferGeometry();
 		g.setAttribute( 'position', new THREE.BufferAttribute( m.positions, 3 ) );
 		g.setAttribute( 'color', new THREE.BufferAttribute( m.colors, 3 ) );
+		if ( m.uvs && m.uvs.length === m.positions.length / 3 * 2 ) g.setAttribute( 'uv', new THREE.BufferAttribute( m.uvs, 2 ) );
 		g.setIndex( new THREE.BufferAttribute( m.indices, 1 ) );
 		const mesh = new THREE.Mesh( g, material );
 		mesh.matrixAutoUpdate = false;
@@ -221,6 +275,7 @@ export class OpenWorld {
 		this.chunks.clear();
 		this.ground.geometry.dispose();
 		for ( const m of Object.values( this.materials ) ) m.dispose();
+		for ( const t of Object.values( this.textures ) ) if ( t ) t.dispose();
 
 	}
 

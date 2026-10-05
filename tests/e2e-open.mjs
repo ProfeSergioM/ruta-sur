@@ -138,7 +138,39 @@ if ( crash.found ) {
 await page.keyboard.press( 'KeyC' );
 await sleep( page, 2500 );
 await page.screenshot( { path: `${ SHOTS }/abierto-04-choque.png` } );
-R.check( 'Sin errores en la consola', log.errors.length === 0, log.errors.slice( 0, 5 ).join( ' | ' ) );
+
+// --- radio: la tecla X recorre las emisoras; la transmisión se simula caída
+const streams = [];
+await page.route( /^https:\/\/(playerservices\.streamtheworld\.com|unlimited\d*-cl\.dps\.live)\//, route => { streams.push( route.request().url() ); route.fulfill( { status: 503, body: 'sin señal' } ).catch( () => {} ); } );
+await page.keyboard.press( 'KeyX' );
+await sleep( page, 1200 );
+const r1 = await page.evaluate( () => { const r = window.__rutaSur.radio; return { name: r.current && r.current.name, src: r.audio && r.audio.src, state: r.state, label: r.label }; } );
+R.check( 'X enciende la primera emisora y el navegador pide su transmisión', r1.name === 'ADN Radio' && /streamtheworld\.com\/api\/livestream-redirect\/ADNAAC\.aac$/.test( r1.src ) && streams.length >= 1, `${ r1.name }: ${ r1.src }` );
+R.check( 'Si la transmisión no responde, el juego lo dice', r1.state === 'error' && /no suena/.test( r1.label ), r1.label );
+await page.keyboard.press( 'KeyX' ); await sleep( page, 300 );
+await page.keyboard.press( 'KeyX' ); await sleep( page, 300 );
+const r3 = await page.evaluate( () => window.__rutaSur.radio.current && window.__rutaSur.radio.current.name );
+R.check( 'X recorre las emisoras en orden', r3 === 'Futuro', r3 );
+await page.keyboard.press( 'KeyX' ); await sleep( page, 300 );
+const r4 = await page.evaluate( () => { const r = window.__rutaSur.radio; return { current: r.current, state: r.state, src: r.audio.getAttribute( 'src' ) }; } );
+R.check( 'Después de la última emisora, la radio se apaga', r4.current === null && r4.state === 'off' && ! r4.src, JSON.stringify( r4 ) );
+await page.keyboard.press( 'Escape' ); await sleep( page, 400 );
+const menu = await page.evaluate( () => ( { botones: [ ...document.querySelectorAll( '#radios button' ) ].map( b => b.textContent ), estado: document.getElementById( 'radio-estado' ).textContent } ) );
+R.check( 'La pausa lista las emisoras y el estado', menu.botones.join( ',' ) === 'Apagada,ADN Radio,Cooperativa,Futuro' && /apagada/i.test( menu.estado ), JSON.stringify( menu ) );
+await page.click( '#radios button[data-radio="cooperativa"]' ); await sleep( page, 800 );
+const r5 = await page.evaluate( () => { const r = window.__rutaSur.radio; return { name: r.current && r.current.name, src: r.audio.src, marcado: document.querySelector( '#radios .marcado' ).textContent }; } );
+R.check( 'Desde la pausa se elige una emisora', r5.name === 'Cooperativa' && /dps\.live\/cooperativafm/.test( r5.src ) && r5.marcado === 'Cooperativa', r5.src );
+await page.fill( '#radio-url', 'https://radio.ejemplo.test/stream.mp3' );
+await page.route( 'https://radio.ejemplo.test/**', route => route.fulfill( { status: 503, body: '' } ).catch( () => {} ) );
+await page.press( '#radio-url', 'Enter' ); await sleep( page, 800 );
+const r6 = await page.evaluate( () => { const r = window.__rutaSur.radio; return { name: r.current && r.current.name, src: r.audio.src, n: document.querySelectorAll( '#radios button' ).length }; } );
+R.check( 'Una dirección propia se agrega a la lista y suena', r6.name === 'Dirección propia' && r6.src === 'https://radio.ejemplo.test/stream.mp3' && r6.n === 5, JSON.stringify( r6 ) );
+await page.screenshot( { path: `${ SHOTS }/abierto-06-radio.png` } );
+await page.click( '#radios button[data-radio="off"]' );
+await page.keyboard.press( 'Escape' ); await sleep( page, 300 );
+R.check( 'M silencia también la radio', await page.evaluate( async () => { const g = window.__rutaSur; g.radio.play( g.radio.stations[ 0 ] ); await new Promise( r => setTimeout( r, 200 ) ); const before = g.radio.audio.muted; window.dispatchEvent( new KeyboardEvent( 'keydown', { code: 'KeyM' } ) ); const after = g.radio.audio.muted; window.dispatchEvent( new KeyboardEvent( 'keydown', { code: 'KeyM' } ) ); g.radio.stop(); return ! before && after && ! g.radio.audio.muted; } ) );
+const own = log.errors.filter( e => ! /Failed to load resource|503/.test( e ) );
+R.check( 'Sin errores en la consola (aparte de las transmisiones simuladas caídas)', own.length === 0, own.slice( 0, 5 ).join( ' | ' ) );
 if ( log.warnings.length ) R.info( 'Advertencias', [ ...new Set( log.warnings ) ].slice( 0, 6 ).join( ' | ' ) );
 await browser.close();
 
