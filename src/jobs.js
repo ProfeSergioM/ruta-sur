@@ -112,6 +112,15 @@ export class Jobs {
 
 	}
 
+	// Multa: se descuenta de la caja (que no baja de cero) y se guarda
+	fine( amount ) {
+
+		this.total = Math.max( 0, this.total - amount );
+		if ( this.store ) this.store.set( { entregas: this.entregas, total: this.total } );
+		return this.total;
+
+	}
+
 	// Daño a la carga desde que se aceptó el encargo (0..1)
 	damage( t ) { return this.job && this.job.damage0 !== undefined ? Math.max( 0, t.damage - this.job.damage0 ) : 0; }
 

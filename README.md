@@ -35,7 +35,7 @@ En un marco aislado tampoco hay almacenamiento: la caja de los encargos y las ca
 | R | Volver a la calle más cercana |
 | G | Activar o desactivar los choques |
 | M, F3 | Sonido, datos técnicos |
-| Esc o P | Pausa |
+| Esc o P | Pausa (desde ahí se apaga o enciende el tráfico) |
 
 Con pantalla táctil aparecen botones en pantalla, y la guía de despacho se toca para aceptar el encargo. También funciona un mando con disposición estándar.
 
@@ -90,6 +90,12 @@ Todo lo que viste el mapa abierto sale de datos abiertos o se genera en el momen
 
 El camión choca con lo que la malla tenga a un metro del suelo. Dos familias de sondas lo cuidan. Las del parachoques y de la cola miran en el sentido de marcha y recortan el avance a la distancia libre. Las de los costados vigilan los flancos de cada unidad, porque en una curva el semirremolque corta la esquina y su costado alcanza lo que el tracto esquivó. Cada punto del flanco lanza un rayo desde donde está hacia donde iría en el paso, y un rayo más recorre cada flanco de punta a punta para atrapar una esquina ajena que entre entre dos puntos. Un movimiento que se aleja del obstáculo nunca se bloquea, así que de un roce siempre se sale en reversa. La velocidad de acercamiento se mide según la normal de la superficie tocada: un roce tangencial detiene el camión sin dañarlo, y un costalazo descuenta como un choque frontal.
 
+### Tráfico
+
+Por las calles circulan autos, camionetas y micros. Cada uno recorre la red vial (la misma que usan los encargos) por su lado derecho, elige al azar la calle que sigue en cada cruce con preferencia por seguir derecho y por las vías principales, frena antes de un giro cerrado y guarda distancia con el de adelante: siete metros más un tiempo de reacción por su velocidad. El camión es un obstáculo más: si está delante, en su carril, el vehículo frena y espera. Aparecen entre 90 y 380 m del camión, sobre calles del componente principal de la red, y desaparecen más allá de 520 m; la calidad fija cuántos circulan a la vez (12, 20 o 30). Con `&trafico=0` en la dirección las calles quedan vacías, y en la pausa se apaga o enciende.
+
+Si el camión embiste a uno, el choque se detecta entre rectángulos en planta (tracto, semirremolque y vehículo) y la velocidad de cierre se mide sobre la normal de menor penetración. El camión pierde la velocidad que la cantidad de movimiento indica (un auto de 1,3 t contra 20 t frena poco), recibe un daño menor que contra un muro, y paga una multa que sale de la caja: $ 20.000 por un auto o una camioneta, $ 40.000 por una micro. El vehículo queda detenido cinco segundos, desplazado fuera del camión, y después sigue su camino. De noche encienden focos y pilotos, y el minimapa los muestra como puntos. El tráfico corre también en la ciudad de pruebas, sin conexión.
+
 ### Espejos
 
 Cada espejo es una cámara que mira hacia atrás desde el vidrio, 7° hacia afuera, y dibuja en una textura. La textura va en el vidrio del espejo de la cabina (el derecho aparece al mirar a la derecha con E) y, para no tener que girar la cabeza, en dos recuadros en lo alto de la pantalla que la tecla V oculta. La imagen se invierte de izquierda a derecha, como en un espejo real. En calidad baja y media se refresca un espejo por cuadro; en alta, los dos.
@@ -100,8 +106,8 @@ La red vial sale de la misma consulta a OpenStreetMap. Con ella el juego elige d
 
 ```
 npm install
-npm test          # pruebas numéricas, sin navegador (299 comprobaciones)
-npm run e2e       # el juego completo en Chromium sin interfaz, 171 comprobaciones (necesita: npm i -D playwright)
+npm test          # pruebas numéricas, sin navegador (329 comprobaciones)
+npm run e2e       # el juego completo en Chromium sin interfaz, 196 comprobaciones (necesita: npm i -D playwright)
 ```
 
 Las pruebas numéricas cubren el modelo del camión (radios de giro contra la teoría, corredor de giro de la norma europea, aceleración, frenado, pendientes, caja de cambios, bajadas, choques frontales y laterales), la geodesia, la red vial, el mapa abierto (triangulación, prismas, trozos, memoria de edificios) y los encargos. `tests/osm-real.test.mjs` usa una muestra real del centro de Temuco (`tests/fixtures/temuco-centro.json`, © OpenStreetMap contributors, ODbL). El entorno de desarrollo no llega a Overpass, así que no hay una muestra real de edificios: `tests/open-fixture.mjs` reparte plantas sintéticas en las manzanas de esa muestra, con las etiquetas que usa el juego.
@@ -134,6 +140,7 @@ Verificado solo contra simulaciones:
 - Los espejos solo se dibujan en la vista de cabina.
 - En el mapa abierto el suelo es plano: no hay relieve ni soleras, y los cerros del horizonte son decorativos. Los edificios y las áreas dibujados en OpenStreetMap como relaciones (con patio interior o en varias partes) no aparecen, y los edificios que no declaran altura ni pisos reciben una altura típica de su tipo. Las calles se dibujan con un ancho fijo por clase, sin carriles ni cruces resueltos. Los árboles y faroles no chocan.
 - El juego supone tránsito por la derecha.
+- El tráfico es sencillo: no hay semáforos ni prioridad en los cruces (dos vehículos pueden cruzarse en una intersección), no cambian de carril ni adelantan, y no esquivan al camión: si está cruzado en su carril, esperan.
 - La red vial ignora las restricciones de giro de OpenStreetMap (son relaciones, y la consulta trae solo vías).
 - Sin calles en un radio de 2,5 km, o si Overpass no responde, el juego queda en modo libre, sin encargos. Si la respuesta llega tarde, los encargos aparecen durante la partida.
 - Dentro de un marco aislado, los enlaces de la pantalla inicial pueden quedar sin efecto, porque el marco decide si deja abrir otras páginas.
@@ -158,6 +165,10 @@ Verificado solo contra simulaciones:
 El código de Ruta Sur se publica bajo la licencia MIT (ver `LICENSE`). Las obras incluidas conservan sus propias licencias, listadas arriba.
 
 ## Cambios
+
+**0.9.0**
+
+- Tráfico: autos, camionetas y micros que recorren la red vial por la derecha, frenan ante el camión y el de adelante, encienden las luces de noche y salen en el minimapa. Chocarlos daña al camión y cuesta una multa. Se apaga en la pausa o con `&trafico=0`.
 
 **0.8.0**
 

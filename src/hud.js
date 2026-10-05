@@ -139,7 +139,7 @@ export class Hud {
 	 * Minimapa con el rumbo del camión hacia arriba.
 	 * g: grafo vial (o null); t: camión; tracker: seguimiento de ruta (o null); dest: { x, z } (o null)
 	 */
-	drawMap( g, t, tracker, dest ) {
+	drawMap( g, t, tracker, dest, vehicles = null ) {
 
 		const ctx = this.ctx, S = this.canvas.width, cx = S / 2, cy = S * 0.6;
 		const R = 240;                      // metros visibles hacia adelante
@@ -194,6 +194,20 @@ export class Hud {
 			ctx.beginPath(); ctx.arc( cx + dx, S / 2 + dy, 11, 0, 7 );
 			ctx.fillStyle = '#12915f'; ctx.fill();
 			ctx.lineWidth = 4; ctx.strokeStyle = '#f4f1e6'; ctx.stroke();
+
+		}
+
+		// los demás vehículos
+		if ( vehicles ) {
+
+			ctx.fillStyle = '#d9d4c7';
+			for ( const v of vehicles ) {
+
+				const px = X( v.x, v.z ), py = Y( v.x, v.z );
+				if ( px < 6 || py < 6 || px > S - 6 || py > S - 6 ) continue;
+				ctx.beginPath(); ctx.arc( px, py, v.kind === 'micro' ? 6 : 4.5, 0, 7 ); ctx.fill();
+
+			}
 
 		}
 

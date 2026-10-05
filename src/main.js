@@ -11,6 +11,7 @@ import { Jobs } from './jobs.js';
 import { Input } from './input.js';
 import { Sound } from './audio.js';
 import { Mirrors } from './mirrors.js';
+import { Traffic, TrafficView } from './traffic.js';
 import { Radio } from './radio.js';
 import { daylight, clockText, wrapHour, DAY_SECONDS_PER_HOUR } from './daylight.js';
 import { compassFromYaw, compassName } from './geo.js';
@@ -155,6 +156,7 @@ const game = {
 	spec: null, quality: QUALITY.media,
 	ghost: false, debug: false,
 	mirrors: null, mirrorInsets: true,   // espejos retrovisores y sus recuadros en pantalla
+	traffic: null, trafficView: null, trafficOn: true, lastCarHit: - 9,   // los demás vehículos
 	hour: 17,                            // hora del juego (0 a 24); el ciclo de luz sale de aquí
 	cam: { mode: 0, lookYaw: 0, lookPitch: 0, orbit: 0, lift: 0, yaw: 0, init: false },
 	load: null,
@@ -238,6 +240,7 @@ function buildMenu() {
 	$( 'p-calle' ).addEventListener( 'click', () => { setPaused( false ); onAction( 'reset' ); } );
 	$( 'p-choques' ).addEventListener( 'click', () => { setPaused( false ); onAction( 'ghost' ); } );
 	$( 'p-espejos' ).addEventListener( 'click', () => { setPaused( false ); onAction( 'mirrors' ); } );
+	$( 'p-trafico' ).addEventListener( 'click', () => { setTraffic( ! game.trafficOn ); setPaused( false ); } );
 	buildRadioMenu();
 	$( 'p-otro' ).addEventListener( 'click', () => { setPaused( false ); onAction( 'skip' ); } );
 	$( 'salir' ).addEventListener( 'click', () => toMenu() );
@@ -369,6 +372,7 @@ function start( opts ) {
 			game.graph = graph;
 			game.jobs = newJobs( graph );
 			game.jobs.offer( game.truck );
+			startTraffic();
 			hud.toast( `Llegó la red de calles. ${ TOUCH ? 'Toca la guía para aceptar el encargo' : 'Enter para aceptar el encargo' }`, 'logro', 6 );
 
 		}
@@ -505,6 +509,7 @@ function beginDriving( t ) {
 
 	game.jobs = newJobs( game.graph );
 	if ( game.graph ) game.jobs.offer( t );
+	startTraffic();
 
 	game.cam.init = false; game.cam.lookYaw = 0; game.cam.lookPitch = 0; game.cam.orbit = 0; game.cam.yaw = t.yaw;
 	hud.setClock( clockText( game.hour ) );
@@ -543,10 +548,39 @@ function seededRandom() {
 
 }
 
+// Los demás vehículos circulan por la red vial; sin red no hay tráfico
+function startTraffic() {
+
+	if ( game.traffic || ! game.graph || ! game.truck ) return;
+	const world = game.world;
+	game.traffic = new Traffic( { graph: game.graph, rng: seededRandom(), count: game.trafficOn ? game.quality.traffic : 0, groundAt: ( x, z ) => { const g = world.groundAt( x, z ); return g ? g.y : null; } } );
+	game.traffic.enabled = game.trafficOn;
+	game.trafficView = new TrafficView( scene, game.traffic );
+	if ( _lastDaylight ) game.trafficView.setNight( _lastDaylight.lamps );
+
+}
+
+function setTraffic( on ) {
+
+	game.trafficOn = on;
+	if ( game.traffic ) {
+
+		game.traffic.enabled = on;
+		game.traffic.count = on ? game.quality.traffic : 0;
+		if ( ! on ) game.traffic.clearNear( 0, 0, Infinity );
+
+	}
+
+	hud.toast( on ? 'Tráfico activado' : 'Tráfico desactivado: las calles quedan vacías', '', 2 );
+
+}
+
 function teardown() {
 
 	input.enabled = false;
 	if ( game.mirrors ) { game.mirrors.dispose(); game.mirrors = null; }
+	if ( game.trafficView ) { game.trafficView.dispose(); game.trafficView = null; }
+	game.traffic = null;
 	if ( game.model ) { scene.remove( game.model.root ); game.model.dispose(); game.model = null; }
 	if ( game.world ) { game.world.dispose(); game.world = null; }
 	game.truck = null; game.jobs = null; game.graph = null; game.load = null;
@@ -573,6 +607,7 @@ function setPaused( on ) {
 	$( 'pausa' ).hidden = ! on;
 	$( 'p-choques' ).textContent = game.ghost ? 'Choques: desactivados' : 'Choques: activados';
 	$( 'p-espejos' ).textContent = game.mirrorInsets ? 'Espejos en pantalla: sí' : 'Espejos en pantalla: no';
+	$( 'p-trafico' ).textContent = game.trafficOn ? 'Tráfico: sí' : 'Tráfico: no';
 	$( 'p-otro' ).hidden = ! game.jobs || game.jobs.state === 'libre';
 	$( 'pausa-aviso' ).hidden = ! game.contextLost;
 	if ( on ) sound.stop(); else sound.start();
@@ -602,6 +637,7 @@ function applyDaylight() {
 	sun.color.setRGB( 1, 0.95 - 0.25 * d.dusk, 0.84 - 0.4 * d.dusk );
 	if ( game.world && game.world.setLight ) game.world.setLight( d );
 	if ( game.model ) game.model.setNight( 1 - d.level );
+	if ( game.trafficView ) game.trafficView.setNight( d.lamps );
 	_lastDaylight = d;
 	return d;
 
@@ -698,6 +734,7 @@ function resetToRoad() {
 	// las mallas que consulta la física se eligen alrededor del foco: primero se mueve el foco al destino
 	_focus.set( target.x, y, target.z ); world.update( _focus, 0, true );
 	const cargo = t.cargoMass, damage = t.damage, odo = t.odo;
+	if ( game.traffic ) game.traffic.clearNear( target.x, target.z, 45 );
 	const ok = placeTruck( t, target.x, target.z, target.yaw, world.terrain, y );
 	t.cargoMass = cargo; t.damage = damage; t.odo = odo;
 	game.cam.init = false;
@@ -798,6 +835,26 @@ function physicsStep( inp ) {
 
 	}
 
+	if ( game.traffic ) {
+
+		const tv = game.traffic.step( t, H, ! game.ghost );
+		if ( tv.hit > 0.85 && game.simTime - game.lastCarHit > 1 ) {
+
+			// chocar un vehículo: daño como contra un obstáculo blando, el camión pierde algo de
+			// velocidad (cantidad de movimiento) y hay multa
+			game.lastCarHit = game.simTime;
+			const car = tv.vehicle, share = car.K.mass / ( totalMass( t ) + car.K.mass );
+			t.v -= Math.sign( t.v || 1 ) * tv.hit * share;
+			t.damage = Math.min( 1, t.damage + 0.35 * Math.pow( tv.hit / 16.7, 2 ) );
+			sound.thud( tv.hit );
+			const fine = car.kind === 'micro' ? 40000 : 20000;
+			if ( game.jobs ) game.jobs.fine( fine );
+			hud.toast( `Chocaste ${ car.kind === 'micro' ? 'una micro' : car.kind === 'camioneta' ? 'una camioneta' : 'un auto' } a ${ Math.round( tv.hit * 3.6 ) } km/h: multa ${ fmtPesos( fine ) }`, 'alerta', 3.5 );
+
+		}
+
+	}
+
 	if ( ev.bump ) sound.bump();
 	if ( ev.jackknife ) hud.toast( 'Efecto tijera: avanza para enderezar el semirremolque', 'alerta', 4 );
 	return ( t.odo - odo ) * ( Math.sign( t.v ) || dirSign );
@@ -812,6 +869,7 @@ game.teleport = ( x, z, compass = 0 ) => {
 	if ( ! g ) return false;
 	const t = game.truck, cargo = t.cargoMass, damage = t.damage;
 	_focus.set( x, g.y, z ); game.world.update( _focus, 1, true );
+	if ( game.traffic ) game.traffic.clearNear( x, z, 45 );
 	const ok = placeTruck( t, x, z, Math.PI - compass * Math.PI / 180, game.world.terrain, g.y );
 	t.cargoMass = cargo; t.damage = damage;
 	game.cam.init = false;
@@ -833,6 +891,7 @@ game.advance = ( seconds, inp = {} ) => {
 
 	}
 
+	if ( game.trafficView ) game.trafficView.update();
 	return true;
 
 };
@@ -854,6 +913,7 @@ function drivingStep( dt ) {
 	game.perf.rays += world.field.rays - rays0;
 
 	game.model.update( t, dt, travel );
+	if ( game.trafficView ) game.trafficView.update();
 	applyDaylight();
 	updateCamera( dt, inp.look );
 	_focus.set( t.x, t.y, t.z );
@@ -954,7 +1014,7 @@ function drivingStep( dt ) {
 
 		T.map = 0.08;
 		const active = jobs && jobs.tracker && ( jobs.state === 'active' || jobs.state === 'offer' );
-		hud.drawMap( game.graph, t, active ? jobs.tracker : null, active ? jobs.job.dest : null );
+		hud.drawMap( game.graph, t, active ? jobs.tracker : null, active ? jobs.job.dest : null, game.traffic ? game.traffic.vehicles : null );
 
 	}
 
@@ -1106,6 +1166,7 @@ if ( renderer ) {
 	//   ?auto=open&lat=..&lon=..        mapa abierto desde OpenStreetMap (sin lat y lon: Temuco)
 	//   &hora=21                        hora del juego al empezar (0 a 24)
 	const hour = params.has( 'hora' ) ? parseFloat( params.get( 'hora' ) ) : undefined;
+	if ( params.get( 'trafico' ) === '0' ) game.trafficOn = false; // &trafico=0: calles vacías
 	if ( params.get( 'auto' ) === 'test' ) start( { test: true, truck: params.get( 'veh' ) || config.truck, quality: params.get( 'q' ) || config.quality, hour } );
 	else if ( params.get( 'auto' ) === 'open' ) start( { open: true, lat: parseFloat( params.get( 'lat' ) ) || CITIES[ 0 ].lat, lon: parseFloat( params.get( 'lon' ) ) || CITIES[ 0 ].lon, truck: params.get( 'veh' ) || config.truck, quality: params.get( 'q' ) || config.quality, hour } );
 

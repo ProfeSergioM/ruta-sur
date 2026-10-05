@@ -35,7 +35,7 @@ const { browser, page, log } = await launch( { width: 960, height: 540 } );
 const net = [];
 await mockOverpass( page, net );
 const t0 = Date.now();
-await page.goto( `${ GAME }?auto=open&q=baja&seed=3` );
+await page.goto( `${ GAME }?auto=open&q=baja&seed=3&trafico=0` ); // el piloto automático no esquiva autos: el tráfico se activa después
 await page.addScriptTag( { content: pilot } );
 let s = await waitFor( page, s => s.state === 'driving', 240000, 'conducción en el mapa abierto' );
 R.info( 'Tiempo hasta poder conducir', ( ( Date.now() - t0 ) / 1000 ).toFixed( 1 ) + ' s' );
@@ -75,6 +75,19 @@ const drive = await page.evaluate( () => {
 } );
 R.check( 'El piloto recorre las calles reales durante 45 s simulados', drive.odo > 80, `${ drive.odo.toFixed( 0 ) } m recorridos, encargo ${ drive.jobs }, faltan ${ drive.remaining === null ? '-' : drive.remaining.toFixed( 0 ) + ' m' }` );
 R.check( 'Sin choques ni roces en la ruta', drive.impacts === 0 && drive.sides === 0, `${ drive.impacts } choques, ${ drive.sides } roces` );
+// --- tráfico sobre las calles de OpenStreetMap
+const traffic = await page.evaluate( () => {
+
+	const g = window.__rutaSur, T = g.traffic, t = g.truck;
+	g.trafficOn = true; T.enabled = true; T.count = 12;
+	g.advance( 3, { decel: 1 } );
+	const first = T.vehicles.map( v => ( { id: v.id, x: v.x, z: v.z } ) );
+	g.advance( 8, { decel: 1 } );
+	const moved = T.vehicles.filter( v => { const f = first.find( p => p.id === v.id ); return f && Math.hypot( v.x - f.x, v.z - f.z ) > 10; } ).length;
+	return { n: T.vehicles.length, first: first.length, moved, hits: T.hits, minDist: Math.min( ...T.vehicles.map( v => Math.hypot( v.x - t.x, v.z - t.z ) ) ) };
+
+} );
+R.check( 'Al activar el tráfico, los vehículos circulan por las calles reales', traffic.n >= 8 && traffic.moved >= 4 && traffic.hits === 0, `${ traffic.n } vehículos, ${ traffic.moved } de ${ traffic.first } se movieron, el más cercano a ${ traffic.minDist.toFixed( 0 ) } m` );
 R.check( 'Siempre con suelo bajo las ruedas, plano', drive.noGround === 0 && drive.maxY < 0.1 && drive.minSamples >= 20, `altura máxima ${ drive.maxY.toFixed( 2 ) } m, mínimo ${ drive.minSamples } muestras` );
 R.info( 'Trozos', `${ drive.chunks } en memoria, ${ drive.built } construidos en ${ drive.ms.toFixed( 0 ) } ms` );
 await page.keyboard.press( 'KeyC' );
@@ -141,6 +154,7 @@ await sleep( page, 2500 );
 await page.screenshot( { path: `${ SHOTS }/abierto-04-choque.png` } );
 
 // --- día y noche: la hora avanza con el juego, T la adelanta y de noche se encienden las luces
+await page.evaluate( () => { window.__rutaSur.hour = 17.3; } ); await sleep( page, 300 ); // la hora de partida, descontado lo que el piloto y el tráfico avanzaron
 const day = await page.evaluate( () => { const g = window.__rutaSur, M = g.world.materials; return { hour: g.hour, clock: document.getElementById( 'reloj' ).textContent, lamps: g.world.lampsOn, pool: M.pool.visible, tint: M.road.color.r, windows: M.windows.visible }; } );
 R.check( 'La partida empieza a las 17 y el reloj lo muestra', day.hour > 17 && day.hour < 18 && /^17:/.test( day.clock ), `${ day.clock }` );
 R.check( 'De día las luces están apagadas y la ciudad sin tinte', ! day.lamps && ! day.pool && day.tint > 0.9 && ! day.windows, JSON.stringify( day ) );

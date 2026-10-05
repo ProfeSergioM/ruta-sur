@@ -6,7 +6,8 @@ import { launch, state, waitFor, sleep, Report, ROOT, SHOTS, GAME } from './harn
 const R = new Report();
 const veh = process.argv[ 2 ] || 'articulado';
 const { browser, page, log } = await launch( { width: 960, height: 540 } );
-const url = `${ GAME }?auto=test&q=baja&veh=${ veh }&seed=${ process.argv[ 3 ] || 11 }`;
+// sin tráfico durante la entrega con piloto automático (el piloto no esquiva autos); el tráfico se prueba al final
+const url = `${ GAME }?auto=test&q=baja&veh=${ veh }&seed=${ process.argv[ 3 ] || 11 }&trafico=0`;
 const t0 = Date.now();
 await page.goto( url );
 
@@ -275,6 +276,71 @@ R.info( 'Roce', `impacto registrado ${ ( graze.impact * 3.6 ).toFixed( 1 ) } km/
 await toCamera( 0 );
 await settle();
 await page.screenshot( { path: `${ SHOTS }/${ veh }-11-roce.png` } );
+
+// --- tráfico: autos que circulan por las calles, frenan ante el camión y chocan si los embiste
+s = await state( page );
+R.check( 'Con &trafico=0 la ciudad está sin tráfico', s.traffic && ! s.traffic.enabled && s.traffic.n === 0, JSON.stringify( s.traffic ) );
+const traffic = await page.evaluate( () => {
+
+	const g = window.__rutaSur, T = g.traffic, t = g.truck;
+	g.teleport( 60, - 3.2, 90 ); // de vuelta al punto de partida, en la avenida
+	g.trafficOn = true; T.enabled = true; T.count = 12;
+	g.advance( 3, { decel: 1 } );
+	const first = T.vehicles.map( v => ( { id: v.id, x: v.x, z: v.z, kind: v.kind, y: v.y } ) );
+	g.advance( 10, { decel: 1 } );
+	const moved = T.vehicles.filter( v => { const f = first.find( p => p.id === v.id ); return f && Math.hypot( v.x - f.x, v.z - f.z ) > 10; } ).length;
+	const dists = T.vehicles.map( v => Math.hypot( v.x - t.x, v.z - t.z ) );
+	const meshes = g.trafficView.group.children.length;
+	const onGround = T.vehicles.filter( v => { const gr = g.world.groundAt( v.x, v.z ); return gr && Math.abs( gr.y - v.y ) < 0.6; } ).length;
+	return { n: T.vehicles.length, first: first.length, moved, minDist: Math.min( ...dists ), maxDist: Math.max( ...dists ), meshes, onGround, kinds: [ ...new Set( T.vehicles.map( v => v.kind ) ) ], hits: T.hits };
+
+} );
+R.check( 'Al activar el tráfico aparecen vehículos por las calles', traffic.n >= 8 && traffic.meshes === traffic.n, `${ traffic.n } vehículos, ${ traffic.meshes } mallas, ${ traffic.kinds.join( ', ' ) }` );
+R.check( 'Aparecen lejos del camión y circulan', traffic.minDist > 40 && traffic.moved >= Math.min( traffic.first, 4 ), `a ${ traffic.minDist.toFixed( 0 ) }–${ traffic.maxDist.toFixed( 0 ) } m, ${ traffic.moved } de ${ traffic.first } se movieron más de 10 m en 10 s` );
+R.check( 'Van apoyados en el suelo de la ciudad, con sus cerros', traffic.onGround === traffic.n, `${ traffic.onGround } de ${ traffic.n }` );
+R.check( 'El camión detenido no choca con nadie', traffic.hits === 0 );
+await toCamera( 1 );
+await settle();
+await page.screenshot( { path: `${ SHOTS }/${ veh }-12-trafico.png` } );
+
+// un auto detenido 35 m por delante: el camión acelera y lo embiste
+const carCrash = await page.evaluate( () => {
+
+	const g = window.__rutaSur, T = g.traffic, t = g.truck;
+	T.clearNear( t.x, t.z, 120 );
+	const car = T.spawnAhead( t, 35 );
+	if ( ! car ) return { car: false };
+	const damage0 = t.damage, total0 = g.jobs.total, hits0 = T.hits;
+	let time = 0, hitV = 0;
+	while ( time < 12 && T.hits === hits0 ) { g.advance( 0.1, { accel: 1 } ); time += 0.1; }
+	const vAtHit = Math.abs( t.v );
+	g.advance( 0.5, { decel: 1 } );
+	const toast = document.getElementById( 'aviso' );
+	return { car: true, time, hits: T.hits - hits0, damage: t.damage - damage0, fine: total0 - g.jobs.total, total0, vAtHit, stun: car.stun, toast: toast && ! toast.hidden ? toast.textContent : '', v: t.v };
+
+} );
+R.check( 'Hay un auto detenido delante para embestir', carCrash.car );
+if ( carCrash.car ) {
+
+R.check( 'El camión choca al auto, una sola vez, y lo aturde', carCrash.hits === 1 && carCrash.stun > 0 && carCrash.time < 12, `a los ${ carCrash.time.toFixed( 1 ) } s, a ${ ( carCrash.vAtHit * 3.6 ).toFixed( 0 ) } km/h` );
+R.check( 'El choque daña al camión, menos que un muro', carCrash.damage > 0.005 && carCrash.damage < 0.3, `${ ( carCrash.damage * 100 ).toFixed( 1 ) } %` );
+R.check( 'Y lo avisa con la multa', /Chocaste un auto a \d+ km\/h: multa/.test( carCrash.toast ), carCrash.toast );
+R.check( 'La multa sale de la caja (si había algo)', carCrash.total0 === 0 ? carCrash.fine === 0 : carCrash.fine === Math.min( 20000, carCrash.total0 ), `$ ${ carCrash.fine } de $ ${ carCrash.total0 }` );
+
+}
+
+// de noche los vehículos encienden las luces
+const night = await page.evaluate( () => { const g = window.__rutaSur; g.hour = 21.5; g.advance( 0.2, { decel: 1 } ); return new Promise( r => setTimeout( () => r( { lights: g.trafficView.lightMat.color.r, n: g.traffic.vehicles.length } ), 300 ) ); } );
+R.check( 'De noche las luces de los vehículos brillan', night.lights > 0.95, `${ night.lights.toFixed( 2 ) }` );
+await settle();
+await page.screenshot( { path: `${ SHOTS }/${ veh }-13-trafico-noche.png` } );
+await page.evaluate( () => { window.__rutaSur.hour = 12; } );
+
+// la pausa permite apagar el tráfico
+await page.keyboard.press( 'Escape' ); await sleep( page, 300 );
+await page.click( '#p-trafico' ); await sleep( page, 400 );
+s = await state( page );
+R.check( 'El botón de la pausa apaga el tráfico y vacía las calles', s.state === 'driving' && s.traffic && ! s.traffic.enabled && s.traffic.n === 0, JSON.stringify( s.traffic ) );
 
 
 R.check( 'Sin errores en la consola', log.errors.length === 0, log.errors.slice( 0, 5 ).join( ' | ' ) );
