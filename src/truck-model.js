@@ -121,6 +121,7 @@ export function createTruckModel( spec, name = 'Ruta Sur' ) {
 
 	const wheels = [];      // { spinner, radius }
 	const steer = [];       // grupos que giran con la dirección
+	const mirrors = [];     // { side, glass, anchor }: vidrio y cámara de cada espejo
 
 	// ------------------------------------------------------------------ tracto
 	const tractor = new THREE.Group();
@@ -234,10 +235,25 @@ export function createTruckModel( spec, name = 'Ruta Sur' ) {
 		interior.add( pillar );
 		interior.add( box( 0.06, 1.1, 2.0, dash, s * ( W / 2 - 0.05 ), cabY( 1.5 ), cabZ( zFront + 1.1 ) ) );
 		interior.add( box( 0.1, 1.5, 0.14, dash, s * ( W / 2 - 0.07 ), cabY( 2.72 ), cabZ( zFront + 1.35 ) ) );
-		// espejos vistos desde adentro
-		interior.add( box( 0.06, 0.56, 0.2, steel, s * ( W / 2 + 0.3 ), cabY( 2.62 ), cabZ( zFront + 0.22 ) ) );
-		interior.add( box( 0.02, 0.46, 0.15, mat( 'mirror', { color: 0x8d9aa4 } ), s * ( W / 2 + 0.26 ), cabY( 2.62 ), cabZ( zFront + 0.24 ) ) );
+		// Espejos vistos desde adentro. La carcasa mira hacia atrás y gira 21° hacia el
+		// conductor; el vidrio lleva la imagen que dibuja la cámara del espejo.
+		const housing = new THREE.Group();
+		housing.position.set( s * ( W / 2 + 0.3 ), cabY( 2.62 ), cabZ( zFront + 0.22 ) );
+		housing.rotation.y = - s * 0.37;
+		housing.add( box( 0.3, 0.58, 0.06, steel ) );
+		const glass = new THREE.Mesh( new THREE.PlaneGeometry( 0.24, 0.48 ), new THREE.MeshBasicMaterial( { color: 0x8d9aa4, toneMapped: false } ) );
+		glass.position.z = 0.032;
+		housing.add( glass );
+		interior.add( housing );
 		interior.add( box( 0.34, 0.04, 0.04, steel, s * ( W / 2 + 0.14 ), cabY( 2.86 ), cabZ( zFront + 0.2 ) ) );
+		// anclaje de la cámara del espejo: mira hacia atrás, 7° hacia afuera y 4° hacia abajo
+		const anchor = new THREE.Object3D();
+		anchor.position.copy( housing.position );
+		anchor.rotation.order = 'YXZ';
+		anchor.rotation.y = Math.PI + s * 0.12;
+		anchor.rotation.x = - 0.07;
+		cab.add( anchor );
+		mirrors.push( { side: s, glass, anchor } );
 
 	}
 
@@ -300,7 +316,7 @@ export function createTruckModel( spec, name = 'Ruta Sur' ) {
 	let lean = 0, nod = 0;
 
 	return {
-		root, tractor, trailer, cab, eye, interior, exterior,
+		root, tractor, trailer, cab, eye, interior, exterior, mirrors,
 
 		// Vista de cabina: se oculta la cabina exterior y se muestra el interior
 		setCabinView( on ) { interior.visible = on; exterior.visible = ! on; },
@@ -333,6 +349,7 @@ export function createTruckModel( spec, name = 'Ruta Sur' ) {
 
 			root.traverse( o => { if ( o.geometry ) o.geometry.dispose(); } );
 			shadowMat.map.dispose(); shadowMat.dispose();
+			for ( const m of mirrors ) m.glass.material.dispose();
 
 		},
 	};

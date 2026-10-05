@@ -1,6 +1,6 @@
 {
   "name": "ruta-sur",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Simulador de camiones sobre los Photorealistic 3D Tiles de Google, en un solo archivo HTML",
   "scripts": {
     "build": "node tools/build.mjs",

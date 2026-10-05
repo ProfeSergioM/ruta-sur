@@ -183,6 +183,13 @@ legend { font: 800 12px/1 var(--f-senal); letter-spacing: 0.14em; text-transform
 #maniobra b { font: 900 20px/1 var(--f-senal); display: block; }
 #maniobra span { font: 600 13px/1.2 var(--f-senal); display: block; }
 
+/* espejos en pantalla: dos recuadros en lo alto, a los lados del centro; el juego dibuja adentro */
+#espejos { position: absolute; left: 0; right: 0; top: max( 12px, env( safe-area-inset-top, 0px ) ); height: 0; }
+#espejos[hidden] { display: none; }
+.espejo { position: absolute; top: 0; height: clamp( 84px, 22vh, 180px ); aspect-ratio: 1 / 2; border: 2px solid rgba( 244, 241, 230, 0.55 ); border-radius: 4px; box-sizing: border-box; }
+#espejo-izq { right: calc( 50% + 36px ); }
+#espejo-der { left: calc( 50% + 36px ); }
+
 /* mensajes */
 #aviso { position: absolute; left: 50%; top: 22%; transform: translateX( -50% ); padding: 10px 18px 8px; font: 800 17px/1.25 var(--f-senal); text-align: center; max-width: min( 520px, calc( 100vw - 32px ) ); text-wrap: balance; }
 #aviso.alerta { background: var(--rojo); border-color: var(--linea); }
@@ -273,6 +280,9 @@ html:not( .js ) #menu, html:not( .js ) #view { display: none; }
 	#limite { width: 38px; height: 38px; border-width: 5px; font-size: 14px; }
 	#marcha { width: 34px; height: 34px; font-size: 22px; }
 	#aviso { top: 74px; font-size: 14px; padding: 7px 12px 5px; }
+	/* los espejos van entre el botón de pausa y la señal de maniobra */
+	#espejo-izq { right: auto; left: 292px; }
+	#espejo-der { left: 342px; }
 }
 @media ( max-height: 480px ) and ( pointer: coarse ) {
 	#tablero { bottom: max( 26px, calc( env( safe-area-inset-bottom, 0px ) + 26px ) ); }
@@ -283,6 +293,11 @@ html:not( .js ) #menu, html:not( .js ) #view { display: none; }
    bajan sobre el tablero y la señal de maniobra se angosta para no pisar la guía de despacho */
 @media ( max-width: 640px ) and ( min-height: 481px ) {
 	#aviso { top: auto; bottom: 128px; }
+	/* arriba no queda lugar: los espejos van apilados en la columna derecha, bajo el mapa y la señal */
+	#espejos { top: 212px; }
+	.espejo { height: clamp( 60px, 10vh, 120px ); }
+	#espejo-izq { right: 12px; left: auto; }
+	#espejo-der { right: 12px; left: auto; top: calc( clamp( 60px, 10vh, 120px ) + 8px ); }
 	#maniobra { max-width: min( 320px, calc( 100vw - 36px - min( 230px, 100vw - 170px ) ) ); }
 }
 /* teléfono vertical: la cámara, la pausa y los avisos quedan sobre el tablero */
@@ -547,6 +562,7 @@ html:not( .js ) #menu, html:not( .js ) #view { display: none; }
 		<div id="maniobra" hidden><i class="flecha"></i><div><b id="m-dist"></b><span id="m-texto"></span></div></div>
 	</div>
 
+	<div id="espejos" hidden><div class="espejo" id="espejo-izq" aria-label="Espejo izquierdo"></div><div class="espejo" id="espejo-der" aria-label="Espejo derecho"></div></div>
 	<div id="aviso" class="panel" role="status" hidden></div>
 
 	<div id="tablero" class="panel">
@@ -631,6 +647,7 @@ html:not( .js ) #menu, html:not( .js ) #view { display: none; }
 					<dt>Espacio</dt><dd>Freno de mano</dd>
 					<dt>C</dt><dd>Cámara: cabina, exterior, cenital</dd>
 					<dt>Q · E · arrastrar</dt><dd>Mirar a los lados</dd>
+					<dt>V</dt><dd>Espejos en pantalla</dd>
 					<dt>Enter · N</dt><dd>Aceptar el encargo · pedir otro</dd>
 					<dt>R</dt><dd>Volver a la calle más cercana</dd>
 					<dt>G</dt><dd>Activar o desactivar los choques</dd>
@@ -655,6 +672,7 @@ html:not( .js ) #menu, html:not( .js ) #view { display: none; }
 			<dt>Espacio</dt><dd>Freno de mano</dd>
 			<dt>C</dt><dd>Cámara: cabina, exterior, cenital</dd>
 			<dt>Q · E · arrastrar</dt><dd>Mirar a los lados</dd>
+			<dt>V</dt><dd>Espejos en pantalla</dd>
 			<dt>Enter · N</dt><dd>Aceptar el encargo · pedir otro</dd>
 			<dt>R</dt><dd>Volver a la calle más cercana</dd>
 			<dt>G</dt><dd>Activar o desactivar los choques</dd>
@@ -665,6 +683,7 @@ html:not( .js ) #menu, html:not( .js ) #view { display: none; }
 			<button class="boton secundario" type="button" id="p-otro">Pedir otro encargo</button>
 			<button class="boton secundario" type="button" id="p-calle">Volver a la calle</button>
 			<button class="boton secundario" type="button" id="p-choques">Choques: activados</button>
+			<button class="boton secundario" type="button" id="p-espejos">Espejos en pantalla: sí</button>
 			<button class="boton secundario" type="button" id="salir">Salir al inicio</button>
 		</div>
 	</div>

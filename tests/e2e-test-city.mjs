@@ -82,7 +82,7 @@ R.check( 'El camión vuelve al punto de partida para seguir la ruta', await page
 const result = await page.evaluate( () => {
 
 	const g = window.__rutaSur, t = g.truck, jobs = g.jobs;
-	const log = { trace: [], impacts: 0, maxSpeed: 0, maxOffset: 0, maxArt: 0, time: 0, delivered: false, reroutes: 0, maxRoll: 0, maxPitch: 0, minSamples: 99, rejected: 0, stuck: 0 };
+	const log = { trace: [], impacts: 0, sides: 0, maxSpeed: 0, maxOffset: 0, maxArt: 0, time: 0, delivered: false, reroutes: 0, maxRoll: 0, maxPitch: 0, minSamples: 99, rejected: 0, stuck: 0 };
 	const pilot = () => {
 
 		const tr = jobs.tracker;
@@ -118,9 +118,10 @@ const result = await page.evaluate( () => {
 	let lastOdo = t.odo, stuckT = 0;
 	while ( g.simTime - t0 < 400 && jobs.state === 'active' ) {
 
-		const before = g.lastImpact; g.lastImpact = 0;
+		g.lastImpact = 0; g.lastSide = 0;
 		g.advance( 0.5, pilot );
 		if ( g.lastImpact > 0.85 ) log.impacts ++;
+		if ( g.lastSide ) log.sides ++;
 		log.maxSpeed = Math.max( log.maxSpeed, Math.abs( t.v ) * 3.6 );
 		if ( jobs.tracker ) log.maxOffset = Math.max( log.maxOffset, jobs.tracker.offset );
 		log.maxArt = Math.max( log.maxArt, Math.abs( Math.atan2( Math.sin( t.yaw - t.trailerYaw ), Math.cos( t.yaw - t.trailerYaw ) ) ) * 180 / Math.PI );
@@ -148,6 +149,7 @@ const result = await page.evaluate( () => {
 } );
 R.check( 'Entrega completada siguiendo la ruta', result.delivered, `${ result.length.toFixed( 0 ) } m en ${ result.time.toFixed( 0 ) } s simulados, pago $ ${ result.paid }` );
 R.check( 'Sin choques en el trayecto', result.impacts === 0, `${ result.impacts } impactos, daño ${ ( result.damage * 100 ).toFixed( 0 ) } %` );
+R.check( 'Los costados no tocan nada en el trayecto', result.sides === 0, `${ result.sides } tramos con contacto lateral` );
 console.log( '      ' + result.trace.join( '\n      ' ) );
 R.check( 'Postura estable sobre la malla ruidosa', result.maxRoll < 6 && result.maxPitch < 9, `alabeo máximo ${ result.maxRoll.toFixed( 1 ) }°, cabeceo máximo ${ result.maxPitch.toFixed( 1 ) }°` );
 R.info( 'Trayecto', `velocidad máxima ${ result.maxSpeed.toFixed( 0 ) } km/h, articulación máxima ${ result.maxArt.toFixed( 0 ) }°, mínimo de muestras de suelo ${ result.minSamples }, pasos con bultos descartados ${ result.rejected }` );
@@ -205,6 +207,75 @@ R.info( 'Datos técnicos', '\n      ' + dbg.split( '\n' ).join( '\n      ' ) );
 const phys = await page.evaluate( () => { const g = window.__rutaSur; const r0 = g.world.field.rays, t0 = performance.now(); g.advance( 10, { accel: 0.5 } ); return { ms: ( performance.now() - t0 ) / 600, rays: ( g.world.field.rays - r0 ) / 600 }; } );
 R.info( 'Costo de la física', `${ phys.ms.toFixed( 3 ) } ms por paso, ${ phys.rays.toFixed( 0 ) } rayos por paso` );
 R.info( 'BVH construidos', `${ s.stats.bvh } en ${ s.stats.bvhMs.toFixed( 0 ) } ms (${ ( s.stats.bvhMs / Math.max( 1, s.stats.bvh ) ).toFixed( 1 ) } ms por malla)` );
+
+await page.keyboard.press( 'F3' ); // sin datos técnicos en las capturas que siguen
+// --- espejos: en la cabina dibujan la escena de atrás, con recuadros en pantalla
+const toCamera = async mode => { for ( let i = 0; i < 3 && ( await state( page ) ).cam !== mode; i ++ ) { await page.keyboard.press( 'KeyC' ); await sleep( page, 150 ); } };
+await toCamera( 0 );
+await settle();
+const mirrors = await page.evaluate( () => {
+
+	const g = window.__rutaSur, m = g.mirrors;
+	return { cam: g.cam.mode, rendered: m.rendered, insets: ! document.getElementById( 'espejos' ).hidden, left: m.sample( - 1 ), right: m.sample( 1 ),
+		rect: document.getElementById( 'espejo-izq' ).getBoundingClientRect().toJSON() };
+
+} );
+R.check( 'En la cabina los espejos se dibujan', mirrors.cam === 0 && mirrors.rendered > 0, `${ mirrors.rendered } dibujos` );
+R.check( 'La imagen del espejo izquierdo tiene contenido (no es un color plano)', mirrors.left.spread > 0.1, `${ ( mirrors.left.spread * 100 ).toFixed( 0 ) } % de píxeles lejos de la media, media ${ mirrors.left.mean.toFixed( 0 ) }` );
+R.check( 'La imagen del espejo derecho tiene contenido', mirrors.right.spread > 0.1, `${ ( mirrors.right.spread * 100 ).toFixed( 0 ) } %` );
+R.check( 'Los recuadros de los espejos están en pantalla', mirrors.insets && mirrors.rect.width > 20 && mirrors.rect.height > 40, JSON.stringify( mirrors.rect ) );
+await page.screenshot( { path: `${ SHOTS }/${ veh }-09-espejos.png` } );
+await page.keyboard.down( 'KeyE' ); // mirar a la derecha: el espejo derecho entra en la vista
+await settle();
+await page.screenshot( { path: `${ SHOTS }/${ veh }-10-espejo-derecho.png` } );
+await page.keyboard.up( 'KeyE' );
+await page.keyboard.press( 'KeyV' );
+await sleep( page, 300 );
+R.check( 'V oculta los recuadros', await page.evaluate( () => document.getElementById( 'espejos' ).hidden ) );
+await page.keyboard.press( 'KeyV' );
+await page.keyboard.press( 'KeyC' );
+await sleep( page, 300 );
+R.check( 'Fuera de la cabina no hay recuadros', await page.evaluate( () => document.getElementById( 'espejos' ).hidden && window.__rutaSur.cam.mode === 1 ) );
+
+// --- roce lateral: el camión avanza paralelo a un edificio y se arrima de a poco
+const graze = await page.evaluate( () => {
+
+	const g = window.__rutaSur, t = g.truck, city = g.world.city;
+	// un edificio largo en la vereda norte, sin autos ni bultos en la vereda delante. Los árboles
+	// de la vereda van en una hilera a 4 m del muro: el camión pasa entre ellos y el muro.
+	const near = ( o, b ) => o.x > b.x0 - 14 && o.x < b.x1 + 2 && o.z > 4 && o.z < 16;
+	const b = city.buildings.find( b => b.z0 > 12 && b.z0 < 18 && b.x1 - b.x0 > 24 && Math.abs( ( b.x0 + b.x1 ) / 2 ) < 300
+		&& ! city.cars.some( o => near( o, b ) ) && ! city.smears.some( o => near( o, b ) )
+		&& Math.abs( ( b.x0 + b.x1 ) / 2 - city.bridge.x ) > 30 );
+	if ( ! b ) return { found: false };
+	// hacia el este (-x), sobre la vereda, con el edificio a la izquierda (norte, +z) a 0,75 m del costado
+	g.teleport( b.x1 + 8, b.z0 - 2.0, 90 );
+	g.lastSide = 0; g.lastImpact = 0;
+	const w = t.spec.tractor.width / 2, d = t.spec.tractor.wheelbase + t.spec.tractor.frontOverhang;
+	const corner = () => ( { x: t.x - Math.sin( t.yaw ) * d - Math.cos( t.yaw ) * w, z: t.z - Math.cos( t.yaw ) * d + Math.sin( t.yaw ) * w } );
+	let time = 0, side = 0, maxZ = - Infinity;
+	while ( time < 25 && ! side ) { g.advance( 0.1, { accel: 0.4, steer: 0.1 } ); time += 0.1; side = g.lastSide; maxZ = Math.max( maxZ, corner().z ); }
+	const v = t.v, damage = t.damage;
+	g.advance( 2, { accel: 0.4, steer: 0.1 } ); // insistir no mete el camión en el muro
+	maxZ = Math.max( maxZ, corner().z );
+	const odo0 = t.odo;
+	g.advance( 2, { decel: 1 } ); // en reversa se aleja
+	return { found: true, side, time, v, damage, gap: b.z0 - maxZ, back: t.odo - odo0, impact: g.lastImpact, x: b.x1 - corner().x };
+
+} );
+R.check( 'Hay un edificio para probar el roce', graze.found );
+if ( graze.found ) {
+
+R.check( 'El costado del camión se detiene contra el muro', graze.side > 0 && Math.abs( graze.v ) < 0.05, `contacto a ${ ( graze.side * 3.6 ).toFixed( 2 ) } km/h de cierre tras ${ graze.time.toFixed( 1 ) } s` );
+R.check( 'La esquina delantera no entra al edificio', graze.gap > - 0.05 && graze.gap < 0.5, `${ graze.gap.toFixed( 2 ) } m del muro` );
+R.check( 'En reversa el camión se aleja del muro', graze.back > 0.5, `${ graze.back.toFixed( 1 ) } m` );
+R.info( 'Roce', `impacto registrado ${ ( graze.impact * 3.6 ).toFixed( 1 ) } km/h, daño ${ ( graze.damage * 100 ).toFixed( 1 ) } %` );
+
+}
+await toCamera( 0 );
+await settle();
+await page.screenshot( { path: `${ SHOTS }/${ veh }-11-roce.png` } );
+
 
 R.check( 'Sin errores en la consola', log.errors.length === 0, log.errors.slice( 0, 5 ).join( ' | ' ) );
 R.check( 'Toda la partida transcurrió sin pedidos a la red', log.external.length === 0, log.external.length ? log.external.slice( 0, 3 ).join( ' ' ) : '0 pedidos' );

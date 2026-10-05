@@ -11,6 +11,7 @@
 //   terrain.sampleGround(x, z, yRef)              -> altura del suelo o NaN
 //       (opcional) deja en terrain.ny la componente vertical de la normal
 //   terrain.castObstacle(ox,oy,oz, dx,dy,dz, max) -> distancia libre o Infinity
+//       (opcional) deja en terrain.normal [nx, ny, nz] la normal de la superficie tocada
 //
 // Convención de ejes (la misma de Three.js): +Y arriba, rumbo `yaw` positivo
 // en sentido antihorario visto desde arriba, y con yaw = 0 el camión mira a -Z.
@@ -115,6 +116,9 @@ export const PARAMS = {
 	// choques
 	probeHeight: 1.0,    // altura de las sondas de choque [m]
 	probeMargin: 0.35,   // distancia a la que el parachoques se detiene [m]
+	sideMargin: 0.25,    // distancia a la que un costado se detiene [m]
+	sideSpacing: 4.5,    // separación máxima entre los puntos vigilados de un costado [m]
+	sideInset: 0.25,     // los puntos extremos de un costado quedan a esta distancia de la esquina [m]
 	shiftTime: 0.45,     // corte de par en un cambio [s]
 	shiftReserve: 0.04,  // aceleración mínima que debe quedar disponible en la marcha siguiente [m/s²]
 	retarder: 2.5,       // frenada máxima del retardador sobre la velocidad limitada [m/s²]
@@ -621,6 +625,22 @@ function spring( value, vel, target, dt, targetVel = 0 ) {
 // ---------------------------------------------------------------------------
 // Choques
 // ---------------------------------------------------------------------------
+//
+// Dos familias de sondas. Las del parachoques (y de la cola) miran en el
+// sentido de marcha y recortan el avance a la distancia libre. Las de los
+// costados cuidan los flancos de cada unidad: en una curva el semirremolque
+// corta la esquina y su costado alcanza lo que el tracto esquivó.
+//
+// Los costados se vigilan sobre la postura que el paso quiere alcanzar:
+// 1. Puntos barridos. Cada punto del flanco lanza un rayo desde donde está
+//    hacia donde iría. Si algo se cruza, el avance se recorta como en el
+//    parachoques. Un movimiento que se aleja del obstáculo nunca se bloquea.
+// 2. Aristas. Un rayo recorre cada flanco de punta a punta: si toca algo, una
+//    esquina ajena entró entre dos puntos y el paso se rechaza entero, salvo
+//    que ya estuviera así antes del paso (para poder salir).
+//
+// La velocidad de acercamiento es la componente del movimiento del punto según
+// la normal de la superficie: un roce tangencial no daña, un costalazo sí.
 
 // Distancia libre hacia adelante (o hacia atrás) medida desde el parachoques
 function probeTravel( t, terrain, sign, reach ) {
@@ -678,24 +698,179 @@ function probeTravel( t, terrain, sign, reach ) {
 
 }
 
+// Postura siguiente en planta a partir del avance `travel`, sin tocar el camión
+const _plan = { x: 0, z: 0, yaw: 0, trailerYaw: 0, yawRate: 0, jack: false };
+function planMotion( t, travel, dt, out ) {
+
+	const tr = t.spec.tractor, tl = t.spec.trailer;
+	const yawRate = dt > 0 ? ( travel / dt ) / tr.wheelbase * Math.tan( t.steer ) : 0;
+	const yawMid = t.yaw + yawRate * dt * 0.5;
+	out.x = t.x + fwdX( yawMid ) * travel;
+	out.z = t.z + fwdZ( yawMid ) * travel;
+	out.yaw = wrapPi( t.yaw + yawRate * dt );
+	out.yawRate = yawRate;
+	out.trailerYaw = t.trailerYaw;
+	out.jack = false;
+	if ( tl ) {
+
+		const vEff = dt > 0 ? travel / dt : 0;
+		const gamma = wrapPi( t.yaw - t.trailerYaw );
+		const thetaDot = ( vEff * Math.sin( gamma ) + tr.hitch * yawRate * Math.cos( gamma ) ) / tl.wheelbase;
+		out.trailerYaw = wrapPi( t.trailerYaw + thetaDot * dt );
+		// límite de articulación; en reversa el ángulo crece solo y el camión queda en tijera
+		const g2 = wrapPi( out.yaw - out.trailerYaw );
+		if ( Math.abs( g2 ) > PARAMS.gammaMax ) {
+
+			out.trailerYaw = wrapPi( out.yaw - Math.sign( g2 ) * PARAMS.gammaMax );
+			if ( vEff < 0 ) out.jack = true;
+
+		}
+
+	}
+
+	return out;
+
+}
+
+// Planta de una unidad para una postura dada: centro del eje de referencia, rumbo, altura y cabeceo
+const _u0 = {}, _u1 = {};
+function unitPose( t, trailer, x, z, yaw, trailerYaw, out ) {
+
+	if ( trailer ) {
+
+		const tr = t.spec.tractor, tl = t.spec.trailer;
+		out.x = x + fwdX( yaw ) * tr.hitch - fwdX( trailerYaw ) * tl.wheelbase;
+		out.z = z + fwdZ( yaw ) * tr.hitch - fwdZ( trailerYaw ) * tl.wheelbase;
+		out.yaw = trailerYaw; out.h = t.hT; out.pitch = t.trailerPitch;
+
+	} else {
+
+		out.x = x; out.z = z; out.yaw = yaw; out.h = t.hR; out.pitch = t.pitch;
+
+	}
+
+	return out;
+
+}
+
+// Velocidad con que el punto que se movió (dx, dy, dz) en dt se acerca a la
+// superficie recién tocada. Sin normal, se toma el movimiento completo.
+function closingSpeed( terrain, dx, dy, dz, dt ) {
+
+	if ( dt <= 0 ) return 0;
+	const n = terrain.normal;
+	if ( ! n ) return Math.sqrt( dx * dx + dy * dy + dz * dz ) / dt;
+	return Math.abs( dx * n[ 0 ] + dy * n[ 1 ] + dz * n[ 2 ] ) / dt;
+
+}
+
+// Un punto del flanco `side` (-1 izquierda, 1 derecha) a `s` metros por delante del eje
+function sideX( u, s, side, halfW ) { return u.x + fwdX( u.yaw ) * s + rightX( u.yaw ) * halfW * side; }
+function sideZ( u, s, side, halfW ) { return u.z + fwdZ( u.yaw ) * s + rightZ( u.yaw ) * halfW * side; }
+
+// Rayo a lo largo de una arista del flanco, de la cola a la punta. Devuelve la
+// distancia al primer obstáculo desde la cola, o Infinity si la arista está libre.
+function edgeHit( terrain, u, sR, sF, side, halfW ) {
+
+	const x0 = sideX( u, sR, side, halfW ), z0 = sideZ( u, sR, side, halfW );
+	const x1 = sideX( u, sF, side, halfW ), z1 = sideZ( u, sF, side, halfW );
+	const tp = Math.tan( u.pitch );
+	const y0 = u.h + tp * sR + PARAMS.probeHeight, y1 = u.h + tp * sF + PARAMS.probeHeight;
+	const dx = x1 - x0, dy = y1 - y0, dz = z1 - z0, len = Math.sqrt( dx * dx + dy * dy + dz * dz );
+	if ( len < 1e-6 ) return Infinity;
+	// la arista se acorta un poco en cada punta: las esquinas ya las cuidan los puntos barridos y el parachoques
+	const trim = PARAMS.sideInset;
+	const d = terrain.castObstacle( x0 + dx / len * trim, y0 + dy / len * trim, z0 + dz / len * trim, dx / len, dy / len, dz / len, len - 2 * trim );
+	return d < len - 2 * trim ? d + trim : Infinity;
+
+}
+
+/**
+ * Vigila los costados de cada unidad entre la postura actual y la planeada.
+ * Devuelve la fracción del avance que cabe (1 si los flancos van libres) y
+ * anota en `ev.side` la velocidad de acercamiento mayor que encontró.
+ */
+function sideSweep( t, plan, terrain, dt, ev ) {
+
+	const tr = t.spec.tractor, tl = t.spec.trailer;
+	let k = 1;
+	for ( let unit = 0; unit < ( tl ? 2 : 1 ); unit ++ ) {
+
+		const trailer = unit === 1;
+		const sF = trailer ? tl.wheelbase + tl.kingpinFromFront : tr.wheelbase + tr.frontOverhang;
+		const sR = trailer ? - ( tl.length - tl.kingpinFromFront - tl.wheelbase ) : - tr.rearOverhang;
+		const halfW = ( trailer ? tl.width : tr.width ) / 2;
+		unitPose( t, trailer, t.x, t.z, t.yaw, t.trailerYaw, _u0 );
+		unitPose( t, trailer, plan.x, plan.z, plan.yaw, plan.trailerYaw, _u1 );
+		const span = sF - sR - 2 * PARAMS.sideInset;
+		const n = Math.max( 2, Math.ceil( span / PARAMS.sideSpacing ) + 1 );
+		const tp = Math.tan( _u0.pitch );
+		for ( let side = - 1; side <= 1; side += 2 ) {
+
+			// 1. puntos barridos
+			for ( let i = 0; i < n; i ++ ) {
+
+				const s = sF - PARAMS.sideInset - span * i / ( n - 1 );
+				const x0 = sideX( _u0, s, side, halfW ), z0 = sideZ( _u0, s, side, halfW );
+				const dx = sideX( _u1, s, side, halfW ) - x0, dz = sideZ( _u1, s, side, halfW ) - z0;
+				const d = Math.sqrt( dx * dx + dz * dz );
+				if ( d < 1e-6 ) continue;
+				const reach = d + PARAMS.sideMargin;
+				const free = terrain.castObstacle( x0, _u0.h + tp * s + PARAMS.probeHeight, z0, dx / d, 0, dz / d, reach );
+				if ( free < reach ) {
+
+					k = Math.min( k, Math.max( 0, free - PARAMS.sideMargin ) / d );
+					ev.side = Math.max( ev.side, closingSpeed( terrain, dx, 0, dz, dt ) );
+
+				}
+
+			}
+
+			// 2. arista: algo entró entre dos puntos, y antes del paso no estaba
+			const hit = edgeHit( terrain, _u1, sR, sF, side, halfW );
+			if ( hit !== Infinity ) {
+
+				const s = sR + hit;
+				const dx = sideX( _u1, s, side, halfW ) - sideX( _u0, s, side, halfW ), dz = sideZ( _u1, s, side, halfW ) - sideZ( _u0, s, side, halfW );
+				const closing = closingSpeed( terrain, dx, 0, dz, dt );
+				if ( edgeHit( terrain, _u0, sR, sF, side, halfW ) === Infinity ) {
+
+					k = 0;
+					ev.side = Math.max( ev.side, closing );
+
+				}
+
+			}
+
+		}
+
+	}
+
+	return k;
+
+}
+
 // ---------------------------------------------------------------------------
 // Paso de simulación
 // ---------------------------------------------------------------------------
 
-const EVENTS = { shift: 0, impact: 0, jackknife: false, bump: 0 };
+const EVENTS = { shift: 0, impact: 0, side: 0, jackknife: false, bump: 0 };
 
 /**
  * Avanza la simulación un paso.
  * input: { accel: 0..1, decel: 0..1, steer: -1..1 (positivo a la izquierda), analog: bool, handbrake: bool }
  * opts:  { collisions: bool }
- * Devuelve un objeto reutilizado con los eventos del paso.
+ * Devuelve un objeto reutilizado con los eventos del paso:
+ *   shift: marcha entrante, impact: velocidad de impacto [m/s] (0 si no hubo),
+ *   side: velocidad de acercamiento de un costado que tocó algo [m/s] (0 si no hubo),
+ *   jackknife: el camión acaba de quedar en tijera, bump: una rueda pisó un bulto.
  */
 export function stepTruck( t, input, terrain, dt, opts = {} ) {
 
 	const s = t.spec, tr = s.tractor, tl = s.trailer, e = s.engine;
 	const collide = opts.collisions !== false;
 	const ev = EVENTS;
-	ev.shift = 0; ev.impact = 0; ev.jackknife = false; ev.bump = 0;
+	ev.shift = 0; ev.impact = 0; ev.side = 0; ev.jackknife = false; ev.bump = 0;
 
 	const m = totalMass( t );
 	const accel = clamp( input.accel || 0, 0, 1 );
@@ -865,7 +1040,7 @@ export function stepTruck( t, input, terrain, dt, opts = {} ) {
 	t.steer += clamp( target - t.steer, - rate * dt, rate * dt );
 	t.steer = clamp( t.steer, - dMax, dMax );
 
-	// --- 5. Choques: la marcha se recorta a la distancia libre
+	// --- 5. Choques del parachoques: la marcha se recorta a la distancia libre
 	let travel = t.v * dt;
 	if ( collide && travel !== 0 ) {
 
@@ -885,39 +1060,42 @@ export function stepTruck( t, input, terrain, dt, opts = {} ) {
 
 	}
 
+	// --- 6. Cinemática en planta, con los costados vigilados
+	planMotion( t, travel, dt, _plan );
+	if ( collide && travel !== 0 ) {
+
+		const k = sideSweep( t, _plan, terrain, dt, ev );
+		if ( k < 1 ) {
+
+			const sg = Math.sign( travel );
+			travel *= k;
+			t.v = 0;
+			t.blocked = 0.6;
+			t.blockedDir = sg;
+			ev.impact = Math.max( ev.impact, ev.side );
+			planMotion( t, travel, dt, _plan );
+
+		}
+
+	}
+
 	if ( t.blocked > 0 ) t.blocked -= dt;
 
-	// --- 6. Cinemática en planta
-	const yawRate = dt > 0 ? ( travel / dt ) / tr.wheelbase * Math.tan( t.steer ) : 0;
-	const yawMid = t.yaw + yawRate * dt * 0.5;
-	t.x += fwdX( yawMid ) * travel;
-	t.z += fwdZ( yawMid ) * travel;
-	t.yaw = wrapPi( t.yaw + yawRate * dt );
+	const yawRate = _plan.yawRate;
+	t.x = _plan.x; t.z = _plan.z; t.yaw = _plan.yaw;
 	t.yawRate = yawRate;
 	t.odo += Math.abs( travel );
 
 	if ( tl ) {
 
-		const vEff = dt > 0 ? travel / dt : 0;
-		const gamma = wrapPi( t.yaw - t.trailerYaw );
-		const thetaDot = ( vEff * Math.sin( gamma ) + tr.hitch * yawRate * Math.cos( gamma ) ) / tl.wheelbase;
-		t.trailerYaw = wrapPi( t.trailerYaw + thetaDot * dt );
+		t.trailerYaw = _plan.trailerYaw;
+		if ( _plan.jack ) {
 
-		// límite de articulación
-		const g2 = wrapPi( t.yaw - t.trailerYaw );
-		if ( Math.abs( g2 ) > PARAMS.gammaMax ) {
+			t.v = 0;
+			if ( ! t.jackknife ) ev.jackknife = true;
+			t.jackknife = true;
 
-			t.trailerYaw = wrapPi( t.yaw - Math.sign( g2 ) * PARAMS.gammaMax );
-			if ( vEff < 0 ) {
-
-				// en reversa el ángulo crece solo: el camión queda en tijera
-				t.v = 0;
-				if ( ! t.jackknife ) ev.jackknife = true;
-				t.jackknife = true;
-
-			}
-
-		} else if ( t.jackknife && Math.abs( g2 ) < PARAMS.gammaMax - 0.15 ) t.jackknife = false;
+		} else if ( t.jackknife && Math.abs( wrapPi( t.yaw - t.trailerYaw ) ) < PARAMS.gammaMax - 0.15 ) t.jackknife = false;
 
 	}
 

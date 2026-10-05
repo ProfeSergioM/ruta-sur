@@ -89,6 +89,7 @@ export class Sound {
 	thud( strength ) { this.burst( 160, 'lowpass', Math.min( 1.2, 0.25 + strength * 0.12 ), 0.35 ); }
 	hiss() { this.burst( 3500, 'highpass', 0.12, 0.45 ); }
 	bump() { this.burst( 90, 'lowpass', 0.5, 0.18 ); }
+	scrape() { this.burst( 900, 'bandpass', 0.22, 0.5 ); }
 
 	update( t, dt ) {
 

@@ -9,6 +9,7 @@ import { Hud, fmtDist, fmtPesos } from './hud.js';
 import { Jobs } from './jobs.js';
 import { Input } from './input.js';
 import { Sound } from './audio.js';
+import { Mirrors } from './mirrors.js';
 import { compassFromYaw, compassName } from './geo.js';
 
 // La versión sale de package.json: tools/build.mjs la fija al armar el archivo.
@@ -167,12 +168,13 @@ const game = {
 	world: null, truck: null, model: null, graph: null, jobs: null,
 	spec: null, quality: QUALITY.media,
 	ghost: false, debug: false,
+	mirrors: null, mirrorInsets: true,   // espejos retrovisores y sus recuadros en pantalla
 	cam: { mode: 0, lookYaw: 0, lookPitch: 0, orbit: 0, lift: 0, yaw: 0, init: false },
 	load: null,
 	limit: 0,
 	perf: { fps: 0, frames: 0, t: 0, physMs: 0, rays: 0 },
 	safe: [],                 // posiciones recientes donde el camión estaba bien apoyado
-	timers: { hud: 0, map: 0, limit: 0, safe: 0, marker: 0, noGround: 0, reseat: 1, blocked: 0, focus: 3 },
+	timers: { hud: 0, map: 0, limit: 0, safe: 0, marker: 0, noGround: 0, reseat: 1, blocked: 0, side: 0, focus: 3 },
 };
 window.__rutaSur = game;
 
@@ -265,6 +267,7 @@ function buildMenu() {
 	// las mismas acciones de las teclas R y G, para quien juega sin teclado
 	$( 'p-calle' ).addEventListener( 'click', () => { setPaused( false ); onAction( 'reset' ); } );
 	$( 'p-choques' ).addEventListener( 'click', () => { setPaused( false ); onAction( 'ghost' ); } );
+	$( 'p-espejos' ).addEventListener( 'click', () => { setPaused( false ); onAction( 'mirrors' ); } );
 	$( 'p-otro' ).addEventListener( 'click', () => { setPaused( false ); onAction( 'skip' ); } );
 	$( 'salir' ).addEventListener( 'click', () => toMenu() );
 
@@ -532,6 +535,8 @@ function beginDriving( t ) {
 	game.truck = t;
 	game.model = createTruckModel( game.spec );
 	scene.add( game.model.root );
+	game.mirrors = new Mirrors( renderer, scene, { width: game.quality.mirror, both: game.quality.mirrorBoth, far: game.quality.far } );
+	game.mirrors.attach( game.model, world, [ $( 'espejo-izq' ), $( 'espejo-der' ) ], game.cam.mode === 0 );
 	world.field.unlimited = false;
 	world.releaseColumn();
 
@@ -543,7 +548,7 @@ function beginDriving( t ) {
 	setCamera( game.cam.mode );
 	camera.up.set( 0, 1, 0 );
 	game.safe.length = 0;
-	game.acc = 0; game.simTime = 0; game.script = null; game.lastImpact = 0;
+	game.acc = 0; game.simTime = 0; game.script = null; game.lastImpact = 0; game.lastSide = 0; game.timers.side = 0;
 	const L = game.load;
 	game.load = null;
 	$( 'carga' ).hidden = true;
@@ -577,6 +582,7 @@ function seededRandom() {
 function teardown() {
 
 	input.enabled = false;
+	if ( game.mirrors ) { game.mirrors.dispose(); game.mirrors = null; }
 	if ( game.model ) { scene.remove( game.model.root ); game.model.dispose(); game.model = null; }
 	if ( game.world ) { game.world.dispose(); game.world = null; }
 	game.truck = null; game.jobs = null; game.graph = null; game.load = null;
@@ -610,6 +616,7 @@ function setPaused( on ) {
 	game.state = on ? 'paused' : 'driving';
 	$( 'pausa' ).hidden = ! on;
 	$( 'p-choques' ).textContent = game.ghost ? 'Choques: desactivados' : 'Choques: activados';
+	$( 'p-espejos' ).textContent = game.mirrorInsets ? 'Espejos en pantalla: sí' : 'Espejos en pantalla: no';
 	$( 'p-otro' ).hidden = ! game.jobs || game.jobs.state === 'libre';
 	$( 'pausa-aviso' ).hidden = ! game.contextLost;
 	if ( on ) sound.stop(); else sound.start();
@@ -625,6 +632,8 @@ function setCamera( mode ) {
 
 	game.cam.mode = mode;
 	if ( game.model ) game.model.setCabinView( mode === 0 );
+	if ( game.mirrors ) game.mirrors.setActive( mode === 0 );
+	$( 'espejos' ).hidden = ! ( mode === 0 && game.mirrorInsets );
 	camera.fov = [ 62, 55, 50 ][ mode ];
 	camera.near = mode === 0 ? 0.12 : 0.5;
 	camera.updateProjectionMatrix();
@@ -645,6 +654,11 @@ function onAction( name ) {
 			hud.toast( game.ghost ? 'Choques desactivados: el camión atraviesa los obstáculos' : 'Choques activados', '', 3 );
 			break;
 		case 'mute': sound.setMuted( ! sound.muted ); hud.toast( sound.muted ? 'Sonido apagado' : 'Sonido encendido', '', 1.5 ); break;
+		case 'mirrors':
+			game.mirrorInsets = ! game.mirrorInsets;
+			$( 'espejos' ).hidden = ! ( game.cam.mode === 0 && game.mirrorInsets );
+			hud.toast( game.mirrorInsets ? 'Espejos en pantalla' : 'Espejos solo en la cabina', '', 1.5 );
+			break;
 		case 'debug': game.debug = ! game.debug; if ( ! game.debug ) hud.setDebug( null ); break;
 		case 'reset': resetToRoad(); break;
 		case 'accept':
@@ -790,7 +804,16 @@ function physicsStep( inp ) {
 	const odo = t.odo, dirSign = Math.sign( t.v ) || 1;
 	const ev = stepTruck( t, inp, game.world.terrain, H, { collisions: ! game.ghost } );
 	game.simTime += H;
+	if ( ev.side ) game.lastSide = ev.side;
 	if ( ev.impact > 0.85 ) { sound.thud( ev.impact ); hud.toast( `Choque a ${ Math.round( ev.impact * 3.6 ) } km/h`, 'alerta', 2.2 ); game.lastImpact = ev.impact; }
+	else if ( ev.side ) {
+
+		// un costado tocó algo despacio: se avisa una vez y se deja de avisar mientras siga apoyado
+		if ( game.timers.side <= 0 ) { sound.scrape(); hud.toast( 'Un costado toca un obstáculo', 'alerta', 2.2 ); }
+		game.timers.side = 3;
+
+	}
+
 	if ( ev.bump ) sound.bump();
 	if ( ev.jackknife ) hud.toast( 'Efecto tijera: avanza para enderezar el semirremolque', 'alerta', 4 );
 	return ( t.odo - odo ) * ( Math.sign( t.v ) || dirSign );
@@ -854,6 +877,7 @@ function drivingStep( dt ) {
 
 	// --- avisos de situación
 	if ( t.blocked > 0 && t.throttle > 0.3 ) { T.blocked += dt; if ( T.blocked > 1.2 ) { hud.toast( 'Hay un obstáculo. Retrocede, o desactiva los choques con G', 'alerta', 3 ); T.blocked = - 6; } } else if ( T.blocked > 0 ) T.blocked = 0; else T.blocked = Math.min( 0, T.blocked + dt );
+	if ( T.side > 0 ) T.side -= dt;
 	if ( ! t.grounded ) {
 
 		T.noGround += dt; T.reseat -= dt;
@@ -1027,7 +1051,15 @@ function frame( now = performance.now() ) {
 	else if ( game.state === 'paused' && game.world ) { _focus.set( game.truck.x, game.truck.y, game.truck.z ); game.world.update( _focus, dt, true ); }
 
 	if ( game.state === 'menu' ) return; // la carga pudo terminar en error y volver al inicio
-	if ( ! game.noRender ) renderer.render( scene, camera ); // las pruebas automáticas pueden omitir el dibujo
+	if ( ! game.noRender ) {
+
+		// en la cabina, los espejos se dibujan antes que la vista principal y sus recuadros después
+		const mirrors = game.mirrors && game.cam.mode === 0 && game.state !== 'loading' ? game.mirrors : null;
+		if ( mirrors ) mirrors.render();
+		renderer.render( scene, camera );
+		if ( mirrors ) mirrors.drawInsets();
+
+	}
 
 	const p = game.perf;
 	p.frames ++; p.t += dt;

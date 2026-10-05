@@ -123,10 +123,11 @@ const ION_GOOGLE_ASSET = 2275207; // Google Photorealistic 3D Tiles en Cesium io
 const DEG = Math.PI / 180;
 const IDLE_TIME = 0.4;           // sin descargas pendientes durante este tiempo, la carga está en reposo [s]
 
+// mirror: ancho de la textura de cada espejo [px]; mirrorBoth: los dos espejos en cada cuadro (si no, uno por cuadro)
 export const QUALITY = {
-	baja: { label: 'Baja', errorTarget: 30, far: 2500, pixelRatio: 1, fade: false, cacheGB: 0.6 },
-	media: { label: 'Media', errorTarget: 20, far: 4000, pixelRatio: 1.5, fade: true, cacheGB: 0.8 },
-	alta: { label: 'Alta', errorTarget: 13, far: 6000, pixelRatio: 2, fade: true, cacheGB: 1.2 },
+	baja: { label: 'Baja', errorTarget: 30, far: 2500, pixelRatio: 1, fade: false, cacheGB: 0.6, mirror: 128, mirrorBoth: false },
+	media: { label: 'Media', errorTarget: 20, far: 4000, pixelRatio: 1.5, fade: true, cacheGB: 0.8, mirror: 192, mirrorBoth: false },
+	alta: { label: 'Alta', errorTarget: 13, far: 6000, pixelRatio: 2, fade: true, cacheGB: 1.2, mirror: 256, mirrorBoth: true },
 };
 
 // ---------------------------------------------------------------------------
@@ -146,6 +147,7 @@ class RayField {
 		this.budget = 1;           // BVH que se pueden construir en este cuadro
 		this.unlimited = false;    // durante la carga no hay tope
 		this.ny = 1;
+		this.normal = new Float64Array( [ 0, 1, 0 ] ); // normal de la última superficie tocada
 		this.rays = 0; this.builds = 0; this.buildMs = 0;
 
 	}
@@ -195,7 +197,7 @@ class RayField {
 
 	/**
 	 * Primer impacto del rayo. Devuelve la distancia o Infinity, y deja la
-	 * componente vertical de la normal en `this.ny`.
+	 * componente vertical de la normal en `this.ny` y la normal completa en `this.normal`.
 	 */
 	cast( ox, oy, oz, dx, dy, dz, far, list = this.meshes ) {
 
@@ -236,6 +238,7 @@ class RayField {
 		}
 
 		this.ny = ny;
+		if ( found ) { const n = this.normal; n[ 0 ] = _n.x; n[ 1 ] = _n.y; n[ 2 ] = _n.z; }
 		return found ? best : Infinity;
 
 	}
@@ -289,6 +292,7 @@ function makeTerrain( field ) {
 
 	return {
 		ny: 1,
+		normal: field.normal,
 		sampleGround( x, z, yRef ) {
 
 			// el rayo parte 2 m sobre la referencia: no ve lo que pasa por encima del camión
@@ -583,6 +587,10 @@ export class TilesWorld {
 	_session() { if ( this.onSession ) { try { this.onSession(); } catch ( e ) { /* el aviso no debe interrumpir la carga */ } } }
 
 	setResolution() { this.tiles.setResolutionFromRenderer( this.camera, this.renderer ); }
+
+	// Cámaras adicionales (los espejos): el cargador trae lo que ven, con el detalle que pide su tamaño
+	addCamera( camera, width, height ) { this.tiles.setCamera( camera ); this.tiles.setResolution( camera, width, height ); }
+	removeCamera( camera ) { this.tiles.deleteCamera( camera ); }
 
 	// Tras mover el foco, la carga debe volver a quedar en reposo antes de darse por lista
 	settle() { this._idle = 0; this._idleFrames = 0; }

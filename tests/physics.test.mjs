@@ -583,6 +583,154 @@ function wallTest( kmh, reverse = false, collisions = true ) {
 
 }
 
+// === 10b. Choques laterales ================================================
+// Edificios como cajas verticales en planta. El rayo se corta con cada caja en
+// X y Z (las cajas son más altas que las sondas) y se entrega la normal de la
+// cara tocada, como hace el mundo real.
+function boxTerrain( boxes ) {
+
+	const normal = new Float64Array( 3 );
+	return {
+		normal,
+		rays: 0,
+		sampleGround: () => 0,
+		castObstacle( ox, oy, oz, dx, dy, dz, max ) {
+
+			this.rays ++;
+			let best = Infinity;
+			for ( const b of boxes ) {
+
+				let tin = 0, tout = max, axis = - 1, sign = 0;
+				for ( const [ o, d, lo, hi, ax ] of [ [ ox, dx, b.x0, b.x1, 0 ], [ oz, dz, b.z0, b.z1, 2 ] ] ) {
+
+					if ( Math.abs( d ) < 1e-12 ) { if ( o < lo || o > hi ) { tin = Infinity; break; } continue; }
+					let t1 = ( lo - o ) / d, t2 = ( hi - o ) / d, s = - 1;
+					if ( t1 > t2 ) { [ t1, t2 ] = [ t2, t1 ]; s = 1; }
+					if ( t1 > tin ) { tin = t1; axis = ax; sign = s; }
+					tout = Math.min( tout, t2 );
+					if ( tin > tout ) { tin = Infinity; break; }
+
+				}
+
+				// un origen dentro de la caja no ve sus caras, como un rayo contra caras de un solo lado
+				if ( tin > 0 && tin <= max && tin < best ) { best = tin; normal.fill( 0 ); normal[ axis ] = sign; }
+
+			}
+
+			return best;
+
+		},
+	};
+
+}
+
+// Posición de un punto en el marco del remolque: `lat` positivo a la derecha, `lon` hacia adelante, desde el eje
+function inTrailerFrame( t, px, pz ) {
+
+	const ax = trailerAxleXZ( t ), yaw = t.trailerYaw;
+	const dx = px - ax.x, dz = pz - ax.z;
+	return { lat: dx * Math.cos( yaw ) - dz * Math.sin( yaw ), lon: - dx * Math.sin( yaw ) - dz * Math.cos( yaw ) };
+
+}
+
+{
+
+	const halfT = A.trailer.width / 2;
+	// a) muro paralelo a 0,6 m del costado izquierdo (x negativo): la marcha recta no toca nada
+	const wallX = - halfT - 0.6;
+	const along = boxTerrain( [ { x0: - 12, x1: wallX, z0: - 60, z1: 20 } ] );
+	const t = createTruck( A, { cargoMass: 15000 } );
+	placeTruck( t, 0, 0, 0, along );
+	t.v = 8; t.gear = 6;
+	let side = 0, impacts = 0;
+	run( t, { accel: 0.4, decel: 0, steer: 0 }, along, 5, ( time, ev ) => { if ( ev.side ) side ++; if ( ev.impact ) impacts ++; } );
+	check( 'Muro paralelo a 0,6 m: pasos con contacto lateral', side, 0, 0 );
+	check( 'Muro paralelo a 0,6 m: impactos', impacts, 0, 0 );
+	within( 'Muro paralelo a 0,6 m: el camión sigue andando', t.v * 3.6, 20, 60, ' km/h' );
+	const raysPerStep = along.rays / Math.round( 5 / DT );
+	within( 'Muro paralelo: rayos de choque por paso (tres del parachoques y los costados)', raysPerStep, 10, 30 );
+
+	// b) esquina: el edificio termina en z = -5. El tracto la pasa de largo y dobla a la
+	// izquierda; el semirremolque corta la esquina y su costado va a dar contra ella.
+	const cornerCase = collisions => {
+
+		const terr = boxTerrain( [ { x0: - 12, x1: wallX, z0: - 5, z1: 20 } ] );
+		const t = createTruck( A, { cargoMass: 15000 } );
+		placeTruck( t, 0, 0, 0, terr );
+		const out = { side: 0, closing: 0, stoppedAt: - 1, minLat: Infinity, blockedSteps: 0, impact: 0 };
+		const each = ( time, ev ) => {
+
+			if ( ev.side ) { out.side ++; out.closing = Math.max( out.closing, ev.side ); if ( out.stoppedAt < 0 ) out.stoppedAt = time; }
+			if ( ev.impact ) out.impact = Math.max( out.impact, ev.impact );
+			if ( t.blocked > 0 ) out.blockedSteps ++;
+			// la esquina del edificio vista desde el remolque: distancia al costado izquierdo, negativa si entró
+			const c = inTrailerFrame( t, wallX, - 5 );
+			if ( c.lon > - 4.4 && c.lon < 9.2 ) out.minLat = Math.min( out.minLat, - c.lat - halfT );
+
+		};
+
+		// recta despacio hasta que el eje trasero del tracto pasa 1 m más allá de la esquina
+		t.v = 2.5; t.gear = 2;
+		run( t, { accel: 0.15, decel: 0, steer: 0 }, terr, 30, () => t.z > - 6, { collisions } );
+		// giro a fondo a la izquierda, a paso de esquina (unos 12 km/h), hasta el primer
+		// contacto lateral o hasta que la esquina queda atrás del remolque
+		out.time = run( t, { accel: 0.08, decel: 0, steer: 1 }, terr, 20, ( time, ev ) => { each( time, ev ); if ( ev.side || inTrailerFrame( t, wallX, - 5 ).lon < - 4.4 ) return false; }, { collisions } );
+		out.v = t.v; out.damage = t.damage;
+		return { t, terr, out };
+
+	};
+
+	const ghost = cornerCase( false );
+	within( 'Esquina sin choques: la esquina entra en el remolque (el caso es real)', ghost.out.minLat, - 10, - 0.3, ' m' );
+	const c = cornerCase( true );
+	check( 'Esquina: el costado del remolque se detiene (hubo contacto lateral)', c.out.side > 0 ? 1 : 0, 1, 0 );
+	within( 'Esquina: momento del contacto', c.out.time, 0.5, 5, ' s' );
+	within( 'Esquina: la esquina nunca entra al remolque', c.out.minLat, - 0.03, 0.5, ' m' );
+	within( 'Esquina: el camión queda detenido', Math.abs( c.out.v ), 0, 0.01, ' m/s' );
+	within( 'Esquina: velocidad de acercamiento (es un roce, no un choque)', c.out.closing * 3.6, 0.5, 4.5, ' km/h' );
+	within( 'Esquina: un roce lento casi no daña', c.out.damage * 100, 0, 1, ' %' );
+	// con el camión detenido contra la esquina, la reversa lo libera: el primer tramo
+	// hacia atrás no toca nada (más adelante, con la articulación, la cola del remolque
+	// puede barrer hacia el muro, como en la realidad)
+	const odo0 = c.t.odo;
+	let blockedBack = 0;
+	run( c.t, { accel: 0, decel: 1, steer: 0 }, c.terr, 1.5, ( time, ev ) => { if ( ev.side ) blockedBack ++; } );
+	within( 'Esquina: en reversa el camión se aleja', c.t.odo - odo0, 0.2, 5, ' m' );
+	check( 'Esquina: alejarse no bloquea', blockedBack, 0, 0 );
+
+	// c) camión rígido que se arrima a un muro en ángulo pequeño: se detiene sin daño
+	const grazeCase = ( v0, steer ) => {
+
+		const terr = boxTerrain( [ { x0: - 12, x1: wallX, z0: - 200, z1: 20 } ] );
+		const t = createTruck( R, { cargoMass: 4000 } );
+		placeTruck( t, 0, 0, 0, terr );
+		t.v = v0; t.gear = 3;
+		const w = R.tractor.width / 2;
+		let minGap = Infinity, closing = 0;
+		run( t, { accel: 0.3, decel: 0, steer }, terr, 25, ( time, ev ) => {
+
+			if ( ev.side ) closing = Math.max( closing, ev.side );
+			// esquina delantera izquierda del tracto
+			const d = R.tractor.wheelbase + R.tractor.frontOverhang;
+			const cx = t.x - Math.sin( t.yaw ) * d - Math.cos( t.yaw ) * w;
+			minGap = Math.min( minGap, cx - wallX );
+
+		} );
+		return { t, minGap, closing };
+
+	};
+
+	const g = grazeCase( 3, 0.12 );
+	within( 'Rígido arrimándose despacio: el frente no entra al muro', g.minGap, - 0.03, 0.6, ' m' );
+	within( 'Rígido arrimándose despacio: se detiene', Math.abs( g.t.v ), 0, 0.01, ' m/s' );
+	check( 'Rígido arrimándose despacio: sin daño', g.t.damage, 0, 0 );
+	const g2 = grazeCase( 10, 1 );
+	within( 'Rígido a fondo contra el muro: el frente no entra al muro', g2.minGap, - 0.03, 0.6, ' m' );
+	within( 'Rígido a fondo contra el muro: el costado golpea y hay daño', g2.t.damage * 100, 1, 60, ' %' );
+	within( 'Rígido a fondo contra el muro: velocidad de cierre', g2.closing * 3.6, 5, 40, ' km/h' );
+
+}
+
 // === 11. Robustez frente al paso de tiempo =================================
 function scripted( dt ) {
 
