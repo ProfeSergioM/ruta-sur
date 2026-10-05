@@ -1,0 +1,690 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Ruta Sur</title>
+<meta name="description" content="Simulador de camiones sobre la malla 3D fotorrealista de Google.">
+<!--__AVISOS__-->
+<style>
+/* Señalética de ruta: paneles de asfalto, verde de señal informativa y ámbar de tablero. */
+:root {
+	color-scheme: dark;
+	--asfalto: #14171a;
+	--asfalto-2: #1f2428;
+	--asfalto-3: #2c3338;
+	--linea: #f4f1e6;
+	--tenue: #a4adb1;
+	--senal: #0b6b45;
+	--senal-luz: #12915f;
+	--ambar: #f2a33a;
+	--rojo: #d43b2a;
+	--f-senal: 'Overpass', 'Arial Narrow', 'Helvetica Neue', Arial, sans-serif;
+	--f-dato: 'Overpass Mono', ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+	--borde: 3px;
+	--radio: 10px;
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body {
+	background: var(--asfalto);
+	color: var(--linea);
+	font: 400 15px/1.45 var(--f-senal);
+	overflow: hidden;
+	-webkit-font-smoothing: antialiased;
+}
+[hidden] { display: none !important; }
+button, input { font: inherit; color: inherit; }
+a { color: var(--ambar); }
+:focus-visible { outline: 2px solid var(--ambar); outline-offset: 2px; }
+
+#view { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+
+/* ------------------------------------------------------------ pantalla inicial */
+#menu {
+	position: fixed; inset: 0; overflow-y: auto;
+	padding-block: clamp( 16px, 4vh, 48px ); padding-inline: 16px;
+	background:
+		linear-gradient( 180deg, rgba( 20, 23, 26, 0.78 ), rgba( 20, 23, 26, 0.96 ) ),
+		repeating-linear-gradient( 90deg, transparent 0 46px, rgba( 244, 241, 230, 0.05 ) 46px 50px );
+}
+.portico { max-width: 1040px; margin-inline: auto; display: grid; gap: 20px; grid-template-columns: minmax( 0, 1.25fr ) minmax( 0, 1fr ); align-items: start; }
+@media ( max-width: 820px ) { .portico { grid-template-columns: minmax( 0, 1fr ); } }
+
+/* El panel principal es una señal informativa: fondo verde, borde blanco, esquinas redondeadas. */
+.senal {
+	background: var(--senal);
+	border: var(--borde) solid var(--linea);
+	border-radius: 14px;
+	box-shadow: 0 0 0 4px var(--senal), 0 18px 40px rgba( 0, 0, 0, 0.45 );
+	padding: clamp( 18px, 3vw, 30px );
+	margin: 4px;
+}
+.marca { display: flex; align-items: center; gap: 14px; }
+.escudo {
+	flex: none; width: 54px; height: 60px; display: grid; place-items: center;
+	background: var(--linea); color: var(--senal);
+	font: 900 22px/1 var(--f-senal); letter-spacing: 0.02em;
+	clip-path: polygon( 0 0, 100% 0, 100% 62%, 50% 100%, 0 62% );
+	padding-bottom: 8px;
+}
+h1 { font: 900 clamp( 34px, 6vw, 56px )/0.95 var(--f-senal); letter-spacing: 0.01em; text-transform: uppercase; margin: 0; }
+.bajada { margin: 12px 0 0; font-size: 17px; max-width: 46ch; text-wrap: balance; }
+
+fieldset { border: 0; margin: 22px 0 0; padding: 0; min-width: 0; }
+legend { font: 800 12px/1 var(--f-senal); letter-spacing: 0.14em; text-transform: uppercase; padding: 0; margin-bottom: 8px; opacity: 0.85; }
+
+/* Cada destino es un renglón de la señal, con su flecha. */
+.renglones { display: grid; grid-template-columns: minmax( 0, 1fr ); gap: 2px; }
+.renglon { position: relative; display: block; }
+.renglon input { position: absolute; opacity: 0; inset: 0; }
+.renglon span {
+	display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 2px 12px;
+	padding: 7px 12px 5px 40px; border-radius: 6px;
+	font: 800 clamp( 20px, 3vw, 26px )/1.1 var(--f-senal);
+	cursor: pointer; position: relative;
+}
+.renglon span::before {
+	content: ''; position: absolute; left: 10px; top: 50%; width: 18px; height: 18px; margin-top: -9px;
+	background: var(--linea); opacity: 0.28;
+	clip-path: polygon( 0 38%, 55% 38%, 55% 10%, 100% 50%, 55% 90%, 55% 62%, 0 62% );
+}
+.renglon small { font: 600 13px/1.2 var(--f-dato); opacity: 0.8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.renglon input:checked + span { background: var(--linea); color: var(--senal); }
+.renglon input:checked + span::before { background: var(--senal); opacity: 1; }
+.renglon input:focus-visible + span { outline: 2px solid var(--ambar); outline-offset: 1px; }
+.renglon span:hover { background: rgba( 244, 241, 230, 0.14 ); }
+.renglon input:checked + span:hover { background: var(--linea); }
+
+.fichas { display: flex; flex-wrap: wrap; gap: 6px; }
+.ficha { position: relative; }
+.ficha input { position: absolute; opacity: 0; inset: 0; }
+.ficha span { display: block; padding: 7px 14px 5px; border: 2px solid rgba( 244, 241, 230, 0.55 ); border-radius: 6px; font-weight: 600; cursor: pointer; }
+.ficha input:checked + span { background: var(--linea); color: var(--senal); border-color: var(--linea); }
+.ficha input:focus-visible + span { outline: 2px solid var(--ambar); outline-offset: 1px; }
+
+.campo { display: block; width: 100%; padding: 10px 12px 8px; border-radius: 6px; border: 2px solid var(--linea); background: rgba( 0, 0, 0, 0.28 ); color: var(--linea); font: 600 15px/1.2 var(--f-dato); }
+.campo::placeholder { color: rgba( 244, 241, 230, 0.55 ); }
+.nota { font-size: 13.5px; margin: 6px 0 0; opacity: 0.92; }
+.nota.error { background: var(--rojo); padding: 8px 10px 6px; border-radius: 6px; opacity: 1; }
+
+.acciones { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 24px; }
+.boton {
+	border: var(--borde) solid var(--linea); border-radius: 8px; cursor: pointer;
+	padding: 12px 22px 9px; font: 900 20px/1 var(--f-senal); letter-spacing: 0.04em; text-transform: uppercase;
+	background: var(--linea); color: var(--senal);
+}
+.boton:hover { background: #fff; }
+.boton.secundario { background: transparent; color: var(--linea); font-size: 15px; font-weight: 800; }
+.boton.secundario:hover { background: rgba( 244, 241, 230, 0.14 ); }
+
+.aviso { background: var(--asfalto-2); border: 1px solid var(--asfalto-3); border-radius: var(--radio); padding: 18px 20px; }
+.aviso + .aviso { margin-top: 14px; }
+.aviso h2 { font: 800 13px/1.2 var(--f-senal); letter-spacing: 0.14em; text-transform: uppercase; margin: 0 0 10px; color: var(--ambar); }
+.aviso p, .aviso li { font-size: 14.5px; color: #d9dcd6; }
+.aviso p { margin: 0 0 10px; }
+.aviso ol { margin: 0 0 12px; padding-left: 20px; }
+.aviso li { margin-bottom: 4px; }
+.aviso .dato { font: 600 13px/1.3 var(--f-dato); color: var(--tenue); }
+.teclas { display: grid; grid-template-columns: auto 1fr; gap: 5px 14px; font-size: 14px; margin: 0; }
+.teclas dt { font: 600 12.5px/1.6 var(--f-dato); color: var(--ambar); white-space: nowrap; }
+.teclas dd { margin: 0; color: #d9dcd6; }
+
+/* ------------------------------------------------------------------------ HUD */
+#hud { position: fixed; inset: 0; pointer-events: none; }
+.panel { background: rgba( 20, 23, 26, 0.82 ); border: 1px solid rgba( 244, 241, 230, 0.16 ); border-radius: var(--radio); backdrop-filter: blur( 6px ); }
+
+/* tablero */
+#tablero {
+	position: absolute; left: 50%; bottom: max( 34px, calc( env( safe-area-inset-bottom, 0px ) + 34px ) ); transform: translateX( -50% );
+	display: flex; align-items: flex-end; gap: 14px; padding: 10px 16px 8px;
+}
+#velocidad { font: 600 54px/0.9 var(--f-dato); font-variant-numeric: tabular-nums; min-width: 2.1ch; text-align: right; }
+.unidad { font: 800 11px/1 var(--f-senal); letter-spacing: 0.14em; color: var(--tenue); text-transform: uppercase; margin-bottom: 7px; }
+#marcha { font: 800 26px/1 var(--f-senal); width: 40px; height: 40px; display: grid; place-items: center; border: 2px solid var(--ambar); color: var(--ambar); border-radius: 6px; padding-top: 3px; }
+#rpm { width: 132px; }
+#rpm .barra { height: 10px; border-radius: 2px; background: var(--asfalto-3); overflow: hidden; position: relative; }
+#rpm .barra i { position: absolute; inset: 0 auto 0 0; width: 0; background: var(--ambar); }
+#rpm .barra.alto i { background: var(--rojo); }
+#rpm .escala { display: flex; justify-content: space-between; font: 400 10px/1 var(--f-dato); color: var(--tenue); margin-top: 4px; }
+/* señal reglamentaria de velocidad máxima: disco blanco, orla roja, números negros */
+#limite { width: 46px; height: 46px; border-radius: 50%; background: #fff; border: 6px solid var(--rojo); color: #111; display: grid; place-items: center; font: 900 17px/1 var(--f-senal); padding-top: 3px; }
+#limite.excede { animation: pulso 0.7s ease-in-out infinite alternate; }
+@keyframes pulso { to { box-shadow: 0 0 0 6px rgba( 212, 59, 42, 0.55 ); } }
+
+/* guía de despacho */
+#lateral { position: absolute; left: 14px; top: max( 14px, env( safe-area-inset-top, 0px ) ); display: flex; flex-direction: column; align-items: flex-start; gap: 8px; max-width: calc( 100vw - 28px ); }
+#guia { width: min( 300px, calc( 100vw - 28px ) ); padding: 12px 14px 10px; }
+#guia header { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; border-bottom: 1px dashed rgba( 244, 241, 230, 0.3 ); padding-bottom: 6px; margin-bottom: 8px; }
+#guia h2 { font: 800 11px/1 var(--f-senal); letter-spacing: 0.14em; text-transform: uppercase; margin: 0; color: var(--tenue); }
+#guia .folio { font: 400 11px/1 var(--f-dato); color: var(--tenue); white-space: nowrap; }
+#guia dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 0; }
+#guia dt { font: 800 10.5px/1.7 var(--f-senal); letter-spacing: 0.1em; text-transform: uppercase; color: var(--tenue); }
+#guia dd { margin: 0; font: 600 14px/1.3 var(--f-dato); min-width: 0; overflow-wrap: anywhere; }
+#guia .destino { font: 800 17px/1.15 var(--f-senal); }
+#guia .timbre { display: inline-block; margin-top: 9px; padding: 4px 8px 2px; border: 2px solid var(--ambar); color: var(--ambar); border-radius: 4px; font: 800 11px/1 var(--f-senal); letter-spacing: 0.12em; text-transform: uppercase; transform: rotate( -2deg ); }
+#guia .timbre.ok { border-color: var(--senal-luz); color: var(--senal-luz); }
+#guia .pista { font-size: 12.5px; color: var(--tenue); margin: 8px 0 0; }
+#caja { font: 600 12px/1 var(--f-dato); color: var(--tenue); margin-top: 8px; }
+
+/* navegación */
+#nav { position: absolute; right: 14px; top: max( 14px, env( safe-area-inset-top, 0px ) ); display: grid; gap: 8px; justify-items: end; }
+#mapa { width: 190px; height: 190px; border-radius: 50%; overflow: hidden; position: relative; }
+#mapa canvas { width: 100%; height: 100%; display: block; }
+#mapa .credito { position: absolute; left: 0; right: 0; bottom: 10px; text-align: center; font: 400 9px/1 var(--f-senal); color: rgba( 244, 241, 230, 0.75 ); }
+#maniobra { display: flex; align-items: center; gap: 10px; background: var(--senal); border: 2px solid var(--linea); border-radius: 8px; padding: 7px 12px 5px; max-width: min( 320px, calc( 100vw - 28px ) ); }
+#maniobra .flecha { flex: none; width: 26px; height: 26px; background: var(--linea); clip-path: polygon( 50% 0, 100% 46%, 66% 46%, 66% 100%, 34% 100%, 34% 46%, 0 46% ); }
+#maniobra[data-lado="left"] .flecha { transform: rotate( -90deg ); }
+#maniobra[data-lado="right"] .flecha { transform: rotate( 90deg ); }
+#maniobra[data-lado="uturn"] .flecha { clip-path: polygon( 62% 100%, 78% 100%, 78% 32%, 72% 16%, 58% 6%, 38% 6%, 24% 16%, 18% 32%, 18% 58%, 4% 58%, 26% 86%, 48% 58%, 34% 58%, 34% 34%, 38% 26%, 46% 22%, 50% 22%, 58% 26%, 62% 34% ); }
+#maniobra[data-lado="roundabout"] .flecha { clip-path: none; background: transparent; border: 5px solid var(--linea); border-radius: 50%; }
+#maniobra[data-lado="arrive"] .flecha { clip-path: polygon( 20% 0, 30% 0, 30% 8%, 90% 8%, 72% 30%, 90% 52%, 30% 52%, 30% 100%, 20% 100% ); }
+#maniobra b { font: 900 20px/1 var(--f-senal); display: block; }
+#maniobra span { font: 600 13px/1.2 var(--f-senal); display: block; }
+
+/* mensajes */
+#aviso { position: absolute; left: 50%; top: 22%; transform: translateX( -50% ); padding: 10px 18px 8px; font: 800 17px/1.25 var(--f-senal); text-align: center; max-width: min( 520px, calc( 100vw - 32px ) ); text-wrap: balance; }
+#aviso.alerta { background: var(--rojo); border-color: var(--linea); }
+#aviso.logro { background: var(--senal); border-color: var(--linea); }
+
+/* atribuciones: obligatorias al mostrar datos de Google Maps Platform */
+#atribucion { position: absolute; left: 10px; right: 10px; bottom: max( 6px, env( safe-area-inset-bottom, 0px ) ); display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; font: 400 11px/1.25 var(--f-senal); color: #fff; text-shadow: 0 0 3px #000, 0 0 2px #000, 0 1px 1px #000; }
+#atribucion .google { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+#atribucion .logo { font: 600 14px/1 var(--f-senal); white-space: nowrap; }
+#atribucion .fuentes { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+#atribucion .via { white-space: nowrap; opacity: 0.9; }
+
+#ayuda { position: absolute; right: 14px; bottom: 34px; padding: 5px 10px 3px; font: 600 12px/1.2 var(--f-senal); color: var(--tenue); }
+#ayuda kbd { font: 600 11px/1 var(--f-dato); color: var(--ambar); }
+
+#depura { padding: 8px 10px; font: 400 11px/1.4 var(--f-dato); white-space: pre; color: #cfe; max-width: 100%; overflow: hidden; }
+
+/* controles táctiles */
+#tactil { position: absolute; inset: 0; display: none; }
+@media ( pointer: coarse ) { #tactil { display: block; } #ayuda { display: none; } #tablero { bottom: 150px; } }
+#tactil button { position: absolute; width: 74px; height: 74px; border-radius: 50%; pointer-events: auto; background: rgba( 20, 23, 26, 0.6 ); border: 2px solid rgba( 244, 241, 230, 0.5 ); font: 900 22px/1 var(--f-senal); touch-action: none; user-select: none; -webkit-user-select: none; }
+#tactil button.activo { background: var(--ambar); color: var(--asfalto); }
+#t-izq { left: 16px; bottom: 44px; } #t-der { left: 104px; bottom: 44px; }
+#t-freno { right: 104px; bottom: 44px; } #t-gas { right: 16px; bottom: 44px; height: 96px; }
+#tactil #t-cam { right: 16px; bottom: 156px; width: 56px; height: 56px; font-size: 13px; }
+#tactil #t-pausa { left: 50%; top: max( 12px, env( safe-area-inset-top, 0px ) ); margin-left: -22px; width: 44px; height: 44px; font-size: 14px; letter-spacing: 0.08em; }
+/* con pantalla táctil, la guía de despacho es el botón para aceptar el encargo */
+@media ( pointer: coarse ) { #guia { pointer-events: auto; cursor: pointer; } #pausa .teclas { display: none; } }
+
+/* -------------------------------------------------------- capas de pantalla */
+/* el margen automático centra la señal y, si no cabe, deja alcanzar su borde superior al desplazar */
+.capa { position: fixed; inset: 0; display: flex; overflow-y: auto; padding: 16px; background: rgba( 20, 23, 26, 0.72 ); }
+.capa .senal { max-width: 560px; width: 100%; margin: auto; }
+.capa h2 { font: 900 30px/1 var(--f-senal); text-transform: uppercase; margin: 0 0 10px; }
+#carga-texto { font: 600 16px/1.35 var(--f-senal); margin: 0; min-height: 2.7em; }
+.guiones { height: 8px; margin-top: 16px; border-radius: 2px; background: repeating-linear-gradient( 90deg, var(--linea) 0 26px, transparent 26px 46px ); background-size: 46px 8px; animation: avance 0.9s linear infinite; opacity: 0.9; }
+@keyframes avance { to { background-position: 46px 0; } }
+@media ( prefers-reduced-motion: reduce ) { .guiones, #limite.excede { animation: none; } }
+#carga[data-estado="error"] .guiones { display: none; }
+#carga[data-estado="error"] #carga-texto { min-height: 0; margin-bottom: 4px; }
+#pausa .teclas dt { color: var(--linea); }
+#pausa .teclas dd { color: var(--linea); opacity: 0.92; }
+
+/* ------------------------------------------------------ avisos de arranque */
+/* Señal preventiva: fondo ámbar y orla negra. Avisa cuando el juego no puede funcionar. */
+.preventiva {
+	background: var(--ambar); color: var(--asfalto);
+	border: var(--borde) solid var(--asfalto); border-radius: 14px;
+	box-shadow: 0 0 0 4px var(--ambar), 0 18px 40px rgba( 0, 0, 0, 0.45 );
+	padding: clamp( 18px, 3vw, 28px ); max-width: 600px; width: 100%; margin: auto;
+}
+.preventiva h2 { font: 900 clamp( 24px, 4.5vw, 32px )/1 var(--f-senal); text-transform: uppercase; margin: 0 0 12px; text-wrap: balance; }
+.preventiva p { margin: 0 0 10px; font-size: 16px; }
+.preventiva pre {
+	margin: 14px 0 0; padding: 10px 12px; max-height: 32vh; overflow: auto;
+	background: rgba( 20, 23, 26, 0.12 ); border: 1px solid rgba( 20, 23, 26, 0.35 ); border-radius: 6px;
+	font: 400 12px/1.5 var(--f-dato); white-space: pre-wrap; overflow-wrap: anywhere;
+	user-select: text; -webkit-user-select: text;
+}
+.preventiva .acciones { margin-top: 16px; }
+.preventiva .boton { border-color: var(--asfalto); background: var(--asfalto); color: var(--ambar); font-size: 17px; }
+.preventiva .boton:hover { background: #000; }
+.preventiva .boton.secundario { background: transparent; color: var(--asfalto); }
+.preventiva .boton.secundario:hover { background: rgba( 20, 23, 26, 0.14 ); }
+.preventiva :focus-visible { outline-color: var(--asfalto); }
+#falla, #sin-motor { z-index: 20; background: rgba( 20, 23, 26, 0.86 ); }
+/* Sin programa en marcha (la vista no ejecuta scripts), queda solo el aviso. */
+html.js #sin-motor { display: none; }
+html:not( .js ) #menu, html:not( .js ) #view { display: none; }
+.nota.marco { margin-top: 18px; padding: 8px 10px 6px; border-radius: 6px; background: rgba( 0, 0, 0, 0.28 ); border-left: 4px solid var(--ambar); }
+
+@media ( max-width: 900px ) { #ayuda { display: none; } }
+/* pantalla baja (teléfono apaisado): todo más compacto y la calle despejada al centro */
+@media ( max-height: 480px ) {
+	#mapa { width: 132px; height: 132px; }
+	#nav { display: flex; flex-direction: row-reverse; align-items: flex-start; }
+	#maniobra { max-width: min( 250px, calc( 100vw - 420px ) ); padding: 5px 9px 3px; }
+	#maniobra b { font-size: 16px; } #maniobra span { font-size: 12px; }
+	#guia { width: 214px; padding: 8px 10px 7px; }
+	#guia header, #guia .pista, #caja { display: none; }
+	#guia dl { gap: 1px 10px; }
+	#guia dd { font-size: 12.5px; }
+	#guia .destino { font-size: 14px; }
+	#guia .timbre { margin-top: 6px; }
+	#velocidad { font-size: 38px; }
+	#rpm { display: none; }
+	#tablero { gap: 10px; padding: 7px 12px 5px; }
+	#limite { width: 38px; height: 38px; border-width: 5px; font-size: 14px; }
+	#marcha { width: 34px; height: 34px; font-size: 22px; }
+	#aviso { top: 74px; font-size: 14px; padding: 7px 12px 5px; }
+}
+@media ( max-height: 480px ) and ( pointer: coarse ) {
+	#tablero { bottom: max( 26px, calc( env( safe-area-inset-bottom, 0px ) + 26px ) ); }
+	#tactil #t-cam { bottom: 150px; width: 48px; height: 48px; font-size: 11px; }
+	#tactil #t-pausa { left: 240px; margin-left: 0; width: 40px; height: 40px; }
+}
+/* ventana angosta y alta (teléfono vertical, panel lateral de otra aplicación): los avisos
+   bajan sobre el tablero y la señal de maniobra se angosta para no pisar la guía de despacho */
+@media ( max-width: 640px ) and ( min-height: 481px ) {
+	#aviso { top: auto; bottom: 128px; }
+	#maniobra { max-width: min( 320px, calc( 100vw - 36px - min( 230px, 100vw - 170px ) ) ); }
+}
+/* teléfono vertical: la cámara, la pausa y los avisos quedan sobre el tablero */
+@media ( max-width: 640px ) and ( min-height: 481px ) and ( pointer: coarse ) {
+	#tactil #t-cam { bottom: 226px; }
+	#tactil #t-pausa { left: 16px; top: auto; bottom: 232px; margin-left: 0; }
+	#aviso { top: auto; bottom: 294px; }
+}
+@media ( max-width: 640px ) {
+	#mapa { width: 132px; height: 132px; }
+	#guia { width: min( 230px, calc( 100vw - 170px ) ); padding: 9px 10px 8px; }
+	#guia dd { font-size: 13px; }
+	#guia .destino { font-size: 15px; }
+	#velocidad { font-size: 42px; }
+	#rpm { width: 86px; }
+}
+/* muy angosta: en la guía, cada rótulo va sobre su dato para que las palabras largas quepan enteras */
+@media ( max-width: 400px ) {
+	#guia dl { grid-template-columns: minmax( 0, 1fr ); gap: 0; }
+	#guia dt { line-height: 1.3; margin-top: 4px; }
+}
+</style>
+<script>
+// Guardia de arranque
+// ---------------------------------------------------------------------------
+// Corre antes que el programa del juego y está escrita con sintaxis antigua, para
+// que funcione también donde el programa no puede. Hace tres cosas:
+//   1. marca que la página ejecuta scripts (sin esa marca queda visible el aviso fijo);
+//   2. instala las tipografías, que viajan dentro de este archivo;
+//   3. anota los errores sin atender y los muestra como un informe que se puede copiar.
+( function () {
+
+	'use strict';
+	var doc = document, raiz = doc.documentElement;
+	raiz.className = ( raiz.className ? raiz.className + ' ' : '' ) + 'js';
+
+	var G = window.__rsGuardia = {
+		listo: false,     // el programa del juego terminó de arrancar
+		errores: [],      // los primeros errores, ya sin rutas del computador
+		total: 0,
+		datos: { version: '__RS_VERSION__' }, // el juego agrega los gráficos y el estado, para el informe
+		alFallar: null,   // lo fija el juego: detiene la partida cuando aparece el informe
+		arranco: arranco, fatal: fatal, informe: informe
+	};
+	var modo = '', avisado = false, propio = null;
+
+	// --- tipografías -----------------------------------------------------------
+	// Se instalan desde los bytes incluidos, sin pedido de red y sin depender de la
+	// política de seguridad de la vista donde esté abierta la página.
+	/*__FUENTES__*/
+	try {
+
+		if ( typeof FUENTES !== 'undefined' && typeof FontFace === 'function' && doc.fonts && doc.fonts.add ) {
+
+			for ( var i = 0; i < FUENTES.length; i ++ ) {
+
+				var f = FUENTES[ i ], bin = atob( f.datos ), bytes = new Uint8Array( bin.length );
+				for ( var j = 0; j < bin.length; j ++ ) bytes[ j ] = bin.charCodeAt( j );
+				var cara = new FontFace( f.familia, bytes.buffer, { weight: f.peso, style: 'normal', unicodeRange: f.rango } );
+				doc.fonts.add( cara );
+				if ( cara.loaded && cara.loaded[ 'catch' ] ) cara.loaded[ 'catch' ]( function () {} );
+
+			}
+
+		}
+
+	} catch ( e ) { /* la página sigue con las tipografías del sistema */ }
+
+	// --- errores ---------------------------------------------------------------
+	// El informe está hecho para compartirse, así que no lleva datos de la persona:
+	//  - las direcciones se reducen al nombre del archivo (una ruta local puede llevar su nombre);
+	//  - se quitan los parámetros de las direcciones y las credenciales del mapa.
+	function limpiar( t ) {
+
+		return String( t )
+			.replace( /(?:blob:)?(?:file|https?):\/\/[^\s)?#]*\/([^\/\s)?#]*)(?:[?#][^\s)]*)?/g, '$1' )
+			.replace( /AIza[0-9A-Za-z_-]{10,}/g, 'AIza…' )
+			.replace( /eyJ[0-9A-Za-z_-]{5,}(?:\.[0-9A-Za-z_-]+){1,2}/g, 'eyJ…' );
+
+	}
+
+	function anotar( mensaje, pila ) {
+
+		G.total ++;
+		if ( G.errores.length < 5 ) {
+
+			var m = limpiar( mensaje ), p = '';
+			if ( pila ) {
+
+				var lineas = limpiar( pila ).split( '\n' ), utiles = [];
+				for ( var i = 0; i < lineas.length && utiles.length < 4; i ++ ) if ( i > 0 || lineas[ i ].indexOf( 'at ' ) >= 0 || lineas[ i ].indexOf( '@' ) >= 0 ) utiles.push( '   ' + lineas[ i ].replace( /^\s+/, '' ) );
+				p = utiles.join( '\n' );
+
+			}
+
+			G.errores.push( { mensaje: m, pila: p } );
+
+		}
+
+		// El informe se abre una vez: al arrancar tapa la página, y durante el juego
+		// aparece con el primer error. Los errores siguientes solo se suman al informe.
+		if ( propio ) pintar();
+		else if ( ! G.listo ) mostrar( 'arranque' );
+		else if ( ! avisado ) {
+
+			avisado = true;
+			if ( typeof G.alFallar === 'function' ) { try { G.alFallar(); } catch ( e ) { /* el aviso sale igual */ } }
+			mostrar( 'juego' );
+
+		} else if ( modo ) pintar();
+
+	}
+
+	window.addEventListener( 'error', function ( e ) {
+
+		if ( ! e ) return;
+		var m = e.message || 'Error sin descripción';
+		if ( /ResizeObserver loop/.test( m ) ) return; // aviso del navegador, sin efecto en el juego
+		anotar( m, e.error && e.error.stack ? e.error.stack : ( e.filename ? 'at ' + e.filename + ':' + e.lineno + ':' + e.colno : '' ) );
+
+	} );
+	window.addEventListener( 'unhandledrejection', function ( e ) {
+
+		var r = e ? e.reason : null;
+		if ( r && r.name === 'AbortError' ) return; // pedidos cancelados al salir de una partida
+		anotar( r && r.message ? ( r.name ? r.name + ': ' : '' ) + r.message : String( r ), r && r.stack ? r.stack : '' );
+
+	} );
+
+	// Si a los 8 segundos el programa no dio señales y tampoco hubo un error, se avisa igual.
+	function vigilar() { setTimeout( function () { if ( ! G.listo && ! modo && ! propio ) mostrar( 'mudo' ); }, 8000 ); }
+	if ( doc.readyState === 'loading' ) doc.addEventListener( 'DOMContentLoaded', vigilar ); else vigilar();
+
+	// --- informe ---------------------------------------------------------------
+	var ABRIR = 'Guarda este archivo en tu computador y ábrelo con doble clic en una versión reciente de Chrome o Edge.';
+	var TEXTOS = {
+		arranque: { titulo: 'El juego no pudo arrancar', parrafos: [ 'Algo falló al iniciar el programa. Suele ocurrir con un navegador antiguo, o cuando el archivo se abre en una vista previa que limita lo que la página puede hacer.', ABRIR, 'Si ya lo abriste así, copia el informe y envíalo para revisar la falla.' ], cerrar: false },
+		antiguo: { titulo: 'El juego no pudo arrancar', parrafos: [ 'Este navegador no entiende el programa del juego. Suele ser una versión antigua.', ABRIR ], cerrar: false },
+		mudo: { titulo: 'El juego no pudo arrancar', parrafos: [ 'El programa del juego no llegó a ejecutarse. Puede que esta vista lo impida, o que el navegador sea antiguo.', ABRIR ], cerrar: false },
+		juego: { titulo: 'El juego encontró un error', parrafos: [ 'La partida puede seguir, pero algo no funcionó como debía. El informe describe la falla: cópialo para avisar del problema.' ], cerrar: true }
+	};
+
+	function informe() {
+
+		var l = [], d = G.datos || {}, marco = false, estado = '';
+		try { marco = window.top !== window.self; } catch ( e ) { marco = true; }
+		try { estado = typeof d.estado === 'function' ? d.estado() : ( d.estado || '' ); } catch ( e ) { estado = ''; }
+		l.push( 'Ruta Sur ' + ( d.version || '' ) + ' · informe de falla' );
+		l.push( 'Momento: ' + ( G.listo ? 'durante el juego' : 'al arrancar' ) + ( estado ? ' (' + estado + ')' : '' ) );
+		l.push( 'Navegador: ' + navigator.userAgent );
+		l.push( 'Página: ' + location.protocol + ( marco ? ' dentro de un marco' : '' ) );
+		if ( d.graficos ) l.push( 'Gráficos: ' + d.graficos );
+		if ( ! G.errores.length ) l.push( 'Sin errores anotados.' );
+		for ( var i = 0; i < G.errores.length; i ++ ) {
+
+			l.push( ( i + 1 ) + '. ' + G.errores[ i ].mensaje );
+			if ( G.errores[ i ].pila ) l.push( G.errores[ i ].pila );
+
+		}
+
+		if ( G.total > G.errores.length ) l.push( 'Y ' + ( G.total - G.errores.length ) + ' más.' );
+		return l.join( '\n' );
+
+	}
+
+	function pintar() {
+
+		var caja = doc.getElementById( 'falla' );
+		if ( ! caja ) return false;
+		var t = propio || TEXTOS[ modo ];
+		if ( ! t ) return false;
+		if ( modo === 'arranque' && G.errores.length && /SyntaxError/.test( G.errores[ 0 ].mensaje ) ) t = TEXTOS.antiguo;
+		doc.getElementById( 'falla-titulo' ).textContent = t.titulo;
+		var cuerpo = doc.getElementById( 'falla-texto' );
+		while ( cuerpo.firstChild ) cuerpo.removeChild( cuerpo.firstChild );
+		for ( var i = 0; i < t.parrafos.length; i ++ ) { var p = doc.createElement( 'p' ); p.textContent = t.parrafos[ i ]; cuerpo.appendChild( p ); }
+		doc.getElementById( 'falla-informe' ).textContent = informe();
+		doc.getElementById( 'falla-seguir' ).hidden = ! t.cerrar;
+		return true;
+
+	}
+
+	function mostrar( m ) {
+
+		modo = m;
+		var abrir = function () { if ( pintar() ) doc.getElementById( 'falla' ).hidden = false; };
+		if ( doc.getElementById( 'falla' ) ) abrir(); else doc.addEventListener( 'DOMContentLoaded', abrir ); // el error llegó antes que la página
+
+	}
+
+	// El juego avisa de algo que le impide funcionar (por ejemplo, sin gráficos 3D).
+	function fatal( titulo, parrafos ) { propio = { titulo: titulo, parrafos: parrafos, cerrar: false }; mostrar( 'propio' ); }
+
+	// El programa del juego terminó de arrancar. Si el informe ya estaba abierto, el aviso de
+	// "no pudo arrancar" dejó de ser cierto: se retira, o queda como informe que se puede cerrar.
+	function arranco() {
+
+		G.listo = true;
+		if ( modo === 'mudo' ) { modo = ''; var caja = doc.getElementById( 'falla' ); if ( caja ) caja.hidden = true; }
+		else if ( modo === 'arranque' ) { avisado = true; modo = 'juego'; pintar(); }
+
+	}
+
+	function seleccionar() {
+
+		try {
+
+			var r = doc.createRange(), s = window.getSelection();
+			r.selectNodeContents( doc.getElementById( 'falla-informe' ) );
+			s.removeAllRanges(); s.addRange( r );
+
+		} catch ( e ) { /* sin selección */ }
+
+	}
+
+	doc.addEventListener( 'click', function ( e ) {
+
+		var id = e.target && e.target.id;
+		if ( id === 'falla-seguir' ) { doc.getElementById( 'falla' ).hidden = true; modo = ''; }
+		if ( id !== 'falla-copiar' ) return;
+		var boton = e.target;
+		var fin = function ( ok ) { boton.textContent = ok ? 'Informe copiado' : 'Selecciónalo y copia con Ctrl+C'; if ( ! ok ) seleccionar(); };
+		try { navigator.clipboard.writeText( informe() ).then( function () { fin( true ); }, function () { fin( false ); } ); } catch ( err ) { fin( false ); }
+
+	} );
+
+} )();
+</script>
+</head>
+<body>
+<!-- Aviso fijo: solo queda a la vista donde la página se muestra sin ejecutar scripts. -->
+<div id="sin-motor" class="capa">
+	<div class="preventiva">
+		<h2>Abre este archivo en un navegador</h2>
+		<p>Esta vista muestra la página, pero no ejecuta el programa del juego.</p>
+		<p>Guarda el archivo <strong>ruta-sur.html</strong> en tu computador y ábrelo con doble clic en Chrome o Edge.</p>
+	</div>
+</div>
+
+<canvas id="view" aria-label="Vista del juego"></canvas>
+
+<div id="hud" hidden>
+	<div id="lateral">
+	<section id="guia" class="panel" aria-live="polite">
+		<header><h2>Guía de despacho</h2><span class="folio" id="g-folio">N.º 0001</span></header>
+		<dl>
+			<dt>Carga</dt><dd id="g-carga"></dd>
+			<dt>Destino</dt><dd id="g-destino" class="destino"></dd>
+			<dt>Faltan</dt><dd id="g-faltan"></dd>
+			<dt>Pago</dt><dd id="g-pago"></dd>
+			<dt>Daño</dt><dd id="g-dano"></dd>
+		</dl>
+		<span class="timbre" id="g-timbre">Disponible</span>
+		<p class="pista" id="g-pista"></p>
+		<div id="caja"></div>
+	</section>
+	<div id="depura" class="panel" hidden></div>
+	</div>
+
+	<div id="nav">
+		<div id="mapa" class="panel"><canvas id="minimapa" width="380" height="380"></canvas><span class="credito" id="mapa-credito">© OpenStreetMap</span></div>
+		<div id="maniobra" hidden><i class="flecha"></i><div><b id="m-dist"></b><span id="m-texto"></span></div></div>
+	</div>
+
+	<div id="aviso" class="panel" role="status" hidden></div>
+
+	<div id="tablero" class="panel">
+		<div id="limite" title="Velocidad máxima">50</div>
+		<div><div id="velocidad">0</div></div>
+		<div class="unidad">km/h</div>
+		<div id="marcha" title="Marcha">N</div>
+		<div id="rpm"><div class="barra"><i></i></div><div class="escala"><span>5</span><span>10</span><span>15</span><span>20</span><span>25</span></div><div class="unidad" style="margin:4px 0 0">rpm × 100</div></div>
+	</div>
+
+	<div id="ayuda" class="panel"><kbd>H</kbd> controles · <kbd>C</kbd> cámara · <kbd id="tecla-pausa">Esc</kbd> pausa</div>
+
+	<div id="tactil">
+		<button id="t-izq" aria-label="Girar a la izquierda">◀</button>
+		<button id="t-der" aria-label="Girar a la derecha">▶</button>
+		<button id="t-freno" aria-label="Frenar o retroceder">■</button>
+		<button id="t-gas" aria-label="Acelerar">▲</button>
+		<button id="t-cam" aria-label="Cambiar cámara">CÁM</button>
+		<button id="t-pausa" aria-label="Pausa y más acciones">II</button>
+	</div>
+
+	<div id="atribucion">
+		<div class="google"><span class="logo" id="a-logo"></span><span class="fuentes" id="a-fuentes"></span></div>
+		<span class="via" id="a-via"></span>
+	</div>
+</div>
+
+<main id="menu">
+	<div class="portico">
+		<!-- No es un <form>: un marco aislado sin permiso de formularios bloquea el envío y el botón quedaría sin efecto. -->
+		<div class="senal" id="formulario" role="form" aria-label="Preparar la partida">
+			<div class="marca"><div class="escudo" aria-hidden="true">RS</div><h1>Ruta Sur</h1></div>
+			<p class="bajada">Conduce un camión por la malla 3D fotorrealista de Google, calle por calle.</p>
+
+			<fieldset>
+				<legend>Ciudad</legend>
+				<div class="renglones" id="ciudades"></div>
+				<input class="campo" id="coordenadas" placeholder="latitud, longitud  (ej. -38.7391, -72.5904)" inputmode="text" autocomplete="off" hidden style="margin-top:8px" aria-label="Latitud y longitud del punto de partida">
+			</fieldset>
+
+			<fieldset>
+				<legend>Camión</legend>
+				<div class="fichas" id="camiones"></div>
+			</fieldset>
+
+			<fieldset>
+				<legend>Calidad del mapa</legend>
+				<div class="fichas" id="calidades"></div>
+			</fieldset>
+
+			<fieldset>
+				<legend>Credencial del mapa</legend>
+				<input class="campo" id="credencial" type="password" placeholder="Token de Cesium ion o clave de Google Maps Platform" aria-describedby="credencial-nota" spellcheck="false" autocomplete="off">
+				<p class="nota" id="credencial-nota">Se guarda solo en este navegador.</p>
+			</fieldset>
+
+			<p class="nota error" id="menu-error" role="alert" hidden></p>
+
+			<div class="acciones">
+				<button class="boton" type="button" id="conducir">Conducir</button>
+				<button class="boton secundario" type="button" id="pista">Ciudad de pruebas, sin credencial</button>
+			</div>
+			<p class="nota marco" id="marco-nota" hidden></p>
+		</div>
+
+		<aside>
+			<div class="aviso">
+				<h2>Cómo conseguir la credencial</h2>
+				<p><strong>Cesium ion</strong>, gratis para uso personal y sin tarjeta:</p>
+				<ol>
+					<li>Crea una cuenta en <a href="https://ion.cesium.com/tokens" target="_blank" rel="noopener">ion.cesium.com</a>.</li>
+					<li>En <em>Access Tokens</em>, copia el token por defecto.</li>
+					<li>Pégalo en el campo de credencial.</li>
+				</ol>
+				<p><strong>Google Maps Platform</strong>, con cuenta de facturación: habilita la <a href="https://developers.google.com/maps/documentation/tile/get-api-key" target="_blank" rel="noopener">Map Tiles API</a> y crea una clave<span id="clave-nota"> sin restricción de sitio web, porque el juego se abre como archivo local</span>.</p>
+				<p class="dato" id="sesiones"></p>
+			</div>
+			<div class="aviso">
+				<h2>Controles</h2>
+				<dl class="teclas">
+					<dt>W A S D · flechas</dt><dd>Acelerar, girar y frenar. Con el camión detenido, mantener <em>atrás</em> engancha la reversa.</dd>
+					<dt>Espacio</dt><dd>Freno de mano</dd>
+					<dt>C</dt><dd>Cámara: cabina, exterior, cenital</dd>
+					<dt>Q · E · arrastrar</dt><dd>Mirar a los lados</dd>
+					<dt>Enter · N</dt><dd>Aceptar el encargo · pedir otro</dd>
+					<dt>R</dt><dd>Volver a la calle más cercana</dd>
+					<dt>G</dt><dd>Activar o desactivar los choques</dd>
+					<dt>M · F3</dt><dd>Sonido · datos técnicos</dd>
+				</dl>
+			</div>
+		</aside>
+	</div>
+</main>
+
+<div id="carga" class="capa" hidden>
+	<div class="senal"><h2 id="carga-titulo">En camino</h2><p id="carga-texto" aria-live="polite"></p><div class="guiones" aria-hidden="true"></div>
+		<div class="acciones"><button class="boton secundario" type="button" id="carga-volver">Volver</button></div></div>
+</div>
+
+<div id="pausa" class="capa" hidden>
+	<div class="senal">
+		<h2>Pausa</h2>
+		<p class="nota error" id="pausa-aviso" role="alert" hidden style="margin:0 0 12px"></p>
+		<dl class="teclas">
+			<dt>W A S D · flechas</dt><dd>Acelerar, girar y frenar. Detenido, mantener <em>atrás</em> engancha la reversa.</dd>
+			<dt>Espacio</dt><dd>Freno de mano</dd>
+			<dt>C</dt><dd>Cámara: cabina, exterior, cenital</dd>
+			<dt>Q · E · arrastrar</dt><dd>Mirar a los lados</dd>
+			<dt>Enter · N</dt><dd>Aceptar el encargo · pedir otro</dd>
+			<dt>R</dt><dd>Volver a la calle más cercana</dd>
+			<dt>G</dt><dd>Activar o desactivar los choques</dd>
+			<dt>M · F3</dt><dd>Sonido · datos técnicos</dd>
+		</dl>
+		<div class="acciones">
+			<button class="boton" type="button" id="seguir">Seguir</button>
+			<button class="boton secundario" type="button" id="p-otro">Pedir otro encargo</button>
+			<button class="boton secundario" type="button" id="p-calle">Volver a la calle</button>
+			<button class="boton secundario" type="button" id="p-choques">Choques: activados</button>
+			<button class="boton secundario" type="button" id="salir">Salir al inicio</button>
+		</div>
+	</div>
+</div>
+
+<!-- Informe de falla: lo muestra la guardia de arranque. -->
+<div id="falla" class="capa" hidden role="alertdialog" aria-modal="true" aria-labelledby="falla-titulo">
+	<div class="preventiva">
+		<h2 id="falla-titulo"></h2>
+		<div id="falla-texto"></div>
+		<pre id="falla-informe" tabindex="0" aria-label="Informe de la falla"></pre>
+		<div class="acciones">
+			<button class="boton" type="button" id="falla-copiar">Copiar informe</button>
+			<button class="boton secundario" type="button" id="falla-seguir" hidden>Cerrar el informe</button>
+		</div>
+	</div>
+</div>
+
+<script type="module">
+/*__APP__*/
+</script>
+</body>
+</html>
