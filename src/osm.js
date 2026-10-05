@@ -42,6 +42,40 @@ out body geom qt;`;
 
 }
 
+// Edificios: cada vía cerrada con etiqueta "building", con sus etiquetas y su geometría.
+// Los edificios dibujados como relaciones (patios interiores, varias partes) quedan fuera.
+export function buildingsQuery( lat, lon, radius ) {
+
+	return `[out:json][timeout:40];
+way["building"](around:${ Math.round( radius ) },${ lat.toFixed( 6 ) },${ lon.toFixed( 6 ) });
+out tags geom qt;`;
+
+}
+
+// Altura aproximada de un edificio por tipo, cuando OSM no trae altura ni pisos [m]
+const BUILDING_HEIGHTS = {
+	house: 5.5, detached: 5.5, semidetached_house: 5.5, terrace: 5.5, residential: 7, bungalow: 4, hut: 3, cabin: 3.5,
+	garage: 3, garages: 3, shed: 3, roof: 3.5, carport: 3, kiosk: 3.2, service: 3.5, greenhouse: 3.5,
+	apartments: 15, dormitory: 12, hotel: 14, office: 12, commercial: 9, retail: 6.5, supermarket: 7, industrial: 8, warehouse: 8,
+	church: 13, chapel: 8, cathedral: 22, mosque: 12, temple: 10, school: 7.5, kindergarten: 4.5, university: 10, college: 9,
+	hospital: 12, public: 8, civic: 8, government: 10, stadium: 15, sports_hall: 10, train_station: 10, transportation: 7,
+	yes: 6,
+};
+
+// Altura de un edificio según sus etiquetas: "height" en metros, o los pisos a 3,2 m
+// más el zócalo, o un valor típico de su tipo. `jitter` (0..1) dispersa las alturas
+// supuestas para que una cuadra no salga toda igual.
+export function buildingHeight( tags = {}, jitter = 0.5 ) {
+
+	const h = parseFloat( String( tags.height || '' ).replace( ',', '.' ) );
+	if ( h > 0 ) return Math.min( 300, h );
+	const levels = parseFloat( String( tags[ 'building:levels' ] || '' ).replace( ',', '.' ) );
+	if ( levels > 0 ) return Math.min( 300, 0.5 + 3.2 * levels );
+	const base = BUILDING_HEIGHTS[ tags.building ] || BUILDING_HEIGHTS.yes;
+	return base * ( 0.85 + 0.3 * jitter );
+
+}
+
 // ¿Puede pasar un camión? Decide la etiqueta más específica que esté presente.
 function truckAllowed( tags ) {
 

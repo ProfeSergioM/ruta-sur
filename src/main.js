@@ -3,6 +3,7 @@
 import * as THREE from 'three';
 import { VEHICLES, createTruck, placeTruck, reseatTruck, stepTruck, speedKmh, gearLabel, articulation, totalMass, trailerAxleXZ } from './physics.js';
 import { TilesWorld, TestWorld, QUALITY, EMBEDDED, viewBlocks } from './world.js';
+import { OpenWorld } from './openworld.js';
 import { buildGraph, spawnPoint, nearestSegment } from './osm.js';
 import { createTruckModel } from './truck-model.js';
 import { Hud, fmtDist, fmtPesos } from './hud.js';
@@ -259,9 +260,10 @@ function buildMenu() {
 
 	// "Conducir" con el botón o con Enter en un campo. No se usa el envío de un formulario:
 	// un marco aislado sin permiso de formularios lo bloquea, y el botón quedaría sin efecto.
-	$( 'conducir' ).addEventListener( 'click', () => startFromMenu( false ) );
-	for ( const field of [ cred, coords ] ) field.addEventListener( 'keydown', e => { if ( e.key === 'Enter' ) { e.preventDefault(); startFromMenu( false ); } } );
-	$( 'pista' ).addEventListener( 'click', () => startFromMenu( true ) );
+	$( 'conducir' ).addEventListener( 'click', () => startFromMenu( 'tiles' ) );
+	for ( const field of [ cred, coords ] ) field.addEventListener( 'keydown', e => { if ( e.key === 'Enter' ) { e.preventDefault(); startFromMenu( 'tiles' ); } } );
+	$( 'pista' ).addEventListener( 'click', () => startFromMenu( 'test' ) );
+	$( 'abierto' ).addEventListener( 'click', () => startFromMenu( 'open' ) );
 	$( 'carga-volver' ).addEventListener( 'click', () => toMenu() );
 	$( 'seguir' ).addEventListener( 'click', () => setPaused( false ) );
 	// las mismas acciones de las teclas R y G, para quien juega sin teclado
@@ -284,18 +286,15 @@ function menuError( text ) {
 
 }
 
-function startFromMenu( test ) {
+// mode: 'test' (ciudad de pruebas), 'open' (mapa abierto desde OpenStreetMap) o 'tiles' (malla de Google)
+function startFromMenu( mode ) {
 
 	menuError( '' );
 	config.city = selected( 'ciudad' ); config.truck = selected( 'camion' ); config.quality = selected( 'calidad' );
 	config.coords = $( 'coordenadas' ).value; config.credential = $( 'credencial' ).value.trim();
 	store.write( 'config', config );
 
-	if ( test ) { sound.start(); return start( { test: true, truck: config.truck, quality: config.quality } ); }
-
-	const cred = detectCredential( config.credential );
-	if ( ! cred ) return menuError( 'Falta la credencial del mapa. Pega un token de Cesium ion o una clave de Google, o prueba la ciudad de pruebas.' );
-	if ( cred.type === 'unknown' ) return menuError( 'No reconozco el formato de la credencial. Un token de Cesium ion empieza con "eyJ" y una clave de Google con "AIza".' );
+	if ( mode === 'test' ) { sound.start(); return start( { test: true, truck: config.truck, quality: config.quality } ); }
 
 	let lat, lon;
 	if ( config.city === 'otro' ) {
@@ -310,6 +309,12 @@ function startFromMenu( test ) {
 		lat = c.lat; lon = c.lon;
 
 	}
+
+	if ( mode === 'open' ) { sound.start(); return start( { open: true, lat, lon, truck: config.truck, quality: config.quality } ); }
+
+	const cred = detectCredential( config.credential );
+	if ( ! cred ) return menuError( 'Falta la credencial del mapa. Pega un token de Cesium ion o una clave de Google, o maneja sin credencial por el mapa abierto o la ciudad de pruebas.' );
+	if ( cred.type === 'unknown' ) return menuError( 'No reconozco el formato de la credencial. Un token de Cesium ion empieza con "eyJ" y una clave de Google con "AIza".' );
 
 	sound.start();
 	start( { credential: cred, lat, lon, truck: config.truck, quality: config.quality } );
@@ -332,6 +337,7 @@ function start( opts ) {
 	sky.scale.setScalar( game.quality.far * 0.9 );
 
 	if ( opts.test ) game.world = new TestWorld( { scene } );
+	else if ( opts.open ) game.world = new OpenWorld( { scene, lat: opts.lat, lon: opts.lon } );
 	else game.world = new TilesWorld( { scene, camera, renderer, credential: opts.credential, lat: opts.lat, lon: opts.lon, quality: game.quality, onSession: () => { sessionsThisMonth( 1 ); showSessions(); } } );
 
 	const hint = game.world.startHint();
@@ -627,6 +633,7 @@ function setPaused( on ) {
 // Acciones del jugador
 // --------------------------------------------------------------------------
 const CAM_NAMES = [ 'Cabina', 'Exterior', 'Cenital' ];
+const WORLD_NAMES = { test: 'ciudad de pruebas', open: 'mapa abierto', tiles: 'teselas 3D' };
 
 function setCamera( mode ) {
 
@@ -1024,7 +1031,7 @@ function debugText() {
 	const geo = w.geo.toGeo( t.x, t.y, t.z );
 	const info = renderer.info;
 	return [
-		`Ruta Sur ${ VERSION } · ${ w.kind === 'test' ? 'ciudad de pruebas' : 'teselas 3D' }`,
+		`Ruta Sur ${ VERSION } · ${ WORLD_NAMES[ w.kind ] || 'teselas 3D' }`,
 		`${ p.fps.toFixed( 0 ) } c/s · física ${ p.physAvg.toFixed( 2 ) } ms · ${ p.rayAvg.toFixed( 0 ) } rayos por cuadro`,
 		`dibujos ${ info.render.calls } · triángulos ${ ( info.render.triangles / 1e6 ).toFixed( 2 ) } M`,
 		`teselas visibles ${ s.visibles } · activas ${ s.activas } · en camino ${ s.descargando } · fallidas ${ s.fallidas }${ s.rechazadas ? ` · sin memoria ${ s.rechazadas }` : '' }`,
@@ -1107,7 +1114,7 @@ canvas.addEventListener( 'webglcontextrestored', () => {
 
 // Un error sin atender durante la partida abre el informe de falla: el camión se detiene mientras tanto.
 guard.alFallar = () => { if ( game.state === 'driving' ) setPaused( true ); };
-guard.datos.estado = () => `${ game.state }${ game.world ? ', ' + ( game.world.kind === 'test' ? 'ciudad de pruebas' : 'teselas 3D' ) : '' }`;
+guard.datos.estado = () => `${ game.state }${ game.world ? ', ' + ( WORLD_NAMES[ game.world.kind ] || 'teselas 3D' ) : '' }`;
 
 if ( renderer ) {
 
@@ -1117,8 +1124,10 @@ if ( renderer ) {
 
 	// Arranque directo para pruebas y desarrollo:
 	//   ?auto=test                      ciudad de pruebas
+	//   ?auto=open&lat=..&lon=..        mapa abierto desde OpenStreetMap (sin lat y lon: Temuco)
 	//   ?tileset=URL&lat=..&lon=..      un tileset 3D propio, sin credencial
 	if ( params.get( 'auto' ) === 'test' ) start( { test: true, truck: params.get( 'veh' ) || config.truck, quality: params.get( 'q' ) || config.quality } );
+	else if ( params.get( 'auto' ) === 'open' ) start( { open: true, lat: parseFloat( params.get( 'lat' ) ) || CITIES[ 0 ].lat, lon: parseFloat( params.get( 'lon' ) ) || CITIES[ 0 ].lon, truck: params.get( 'veh' ) || config.truck, quality: params.get( 'q' ) || config.quality } );
 	else if ( params.get( 'tileset' ) ) {
 
 		start( {

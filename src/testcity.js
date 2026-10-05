@@ -33,7 +33,7 @@ function mulberry32( a ) {
 }
 
 function hash2( i, j ) { const s = Math.sin( i * 127.1 + j * 311.7 ) * 43758.5453; return s - Math.floor( s ); }
-function valueNoise( x, z, cell ) {
+export function valueNoise( x, z, cell ) {
 
 	const u = x / cell, v = z / cell, i = Math.floor( u ), j = Math.floor( v ), fu = u - i, fv = v - j;
 	const a = hash2( i, j ), b = hash2( i + 1, j ), c = hash2( i, j + 1 ), d = hash2( i + 1, j + 1 );
@@ -201,7 +201,7 @@ export function generateCity( seed = 7 ) {
 // Geometría
 // ---------------------------------------------------------------------------
 
-class MeshBuilder {
+export class MeshBuilder {
 
 	constructor() { this.p = []; this.c = []; this.i = []; }
 	get count() { return this.p.length / 3; }

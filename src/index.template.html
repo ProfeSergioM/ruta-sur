@@ -595,7 +595,7 @@ html:not( .js ) #menu, html:not( .js ) #view { display: none; }
 		<!-- No es un <form>: un marco aislado sin permiso de formularios bloquea el envío y el botón quedaría sin efecto. -->
 		<div class="senal" id="formulario" role="form" aria-label="Preparar la partida">
 			<div class="marca"><div class="escudo" aria-hidden="true">RS</div><h1>Ruta Sur</h1></div>
-			<p class="bajada">Conduce un camión por la malla 3D fotorrealista de Google, calle por calle.</p>
+			<p class="bajada">Conduce un camión por las calles de una ciudad real: sobre la malla 3D fotorrealista de Google, o sobre el mapa abierto de OpenStreetMap.</p>
 
 			<fieldset>
 				<legend>Ciudad</legend>
@@ -623,12 +623,17 @@ html:not( .js ) #menu, html:not( .js ) #view { display: none; }
 
 			<div class="acciones">
 				<button class="boton" type="button" id="conducir">Conducir</button>
+				<button class="boton secundario" type="button" id="abierto">Mapa abierto (OpenStreetMap), sin credencial</button>
 				<button class="boton secundario" type="button" id="pista">Ciudad de pruebas, sin credencial</button>
 			</div>
 			<p class="nota marco" id="marco-nota" hidden></p>
 		</div>
 
 		<aside>
+			<div class="aviso">
+				<h2>Sin credencial</h2>
+				<p>El <strong>mapa abierto</strong> levanta las calles y los edificios de OpenStreetMap como cajas de colores, sobre un suelo plano: sirve para repartir encargos por las calles verdaderas de la ciudad elegida. La <strong>ciudad de pruebas</strong> es una ciudad generada que funciona sin conexión.</p>
+			</div>
 			<div class="aviso">
 				<h2>Cómo conseguir la credencial</h2>
 				<p><strong>Cesium ion</strong>, gratis para uso personal y sin tarjeta:</p>

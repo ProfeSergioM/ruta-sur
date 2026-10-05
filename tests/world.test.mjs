@@ -19,10 +19,12 @@ class Storage {
 
 globalThis.localStorage = new Storage();
 
-const { fetchRoads, hardenSession, describeLoadError, noteBlocked, viewBlocks, EMBEDDED } = await import( '../src/world.js' );
+const { fetchRoads, fetchBuildings, hardenSession, describeLoadError, noteBlocked, viewBlocks, EMBEDDED } = await import( '../src/world.js' );
+const { OpenWorld } = await import( '../src/openworld.js' );
+const { syntheticBuildings } = await import( './open-fixture.mjs' );
 const { GoogleCloudAuthPlugin } = await import( '3d-tiles-renderer/plugins' );
 const { Geo } = await import( '../src/geo.js' );
-const { buildGraph, overpassQuery } = await import( '../src/osm.js' );
+const { buildGraph, overpassQuery, buildingsQuery } = await import( '../src/osm.js' );
 const { cityRoadsOSM } = await import( '../src/testcity.js' );
 const { overpassAnswer } = await import( './overpass-mock.mjs' );
 
@@ -101,6 +103,75 @@ const full = cityRoadsOSM( geo );
 	globalThis.fetch = async ( url, opt ) => json( overpassAnswer( decodeURIComponent( String( opt.body ).replace( /^data=/, '' ) ), full ) );
 	const r4 = await fetchRoads( LAT, LON, 2500 );
 	report( 'Con el almacenamiento lleno la red se usa igual', r4.elements.length === 14 && localStorage.length === 0 );
+
+}
+
+// ------------------------------------------------------------------ edificios
+{
+
+	globalThis.localStorage = new Storage();
+	const bld = syntheticBuildings( full, geo );
+	// una vía sin cerrar, una con dos puntos y una sin etiqueta "building": se descartan
+	const extra = { elements: [
+		...bld.elements,
+		{ type: 'way', id: 1, geometry: bld.elements[ 0 ].geometry.slice( 0, 2 ), tags: { building: 'yes' } },
+		{ type: 'way', id: 2, geometry: bld.elements[ 0 ].geometry, tags: { amenity: 'parking' } },
+		{ type: 'node', id: 3, lat: 0, lon: 0, tags: { building: 'yes' } },
+		{ type: 'way', id: 4, geometry: bld.elements[ 1 ].geometry.slice( 0, 4 ), tags: { building: 'house', name: 'x'.repeat( 200 ), 'building:levels': '2', roof: 'flat' } },
+	] };
+	const calls = [];
+	globalThis.fetch = async ( url, opt ) => { const q = decodeURIComponent( String( opt.body ).replace( /^data=/, '' ) ); calls.push( { url, q } ); return json( overpassAnswer( q, extra ) ); };
+	const b = await fetchBuildings( LAT, LON, 1500 );
+	report( 'Los edificios se piden a Overpass con la consulta del juego', calls.length === 1 && calls[ 0 ].q === buildingsQuery( LAT, LON, 1500 ) );
+	const first = b.elements[ 0 ], ring = bld.elements[ 0 ].geometry;
+	report( 'Quedan solo las vías cerradas con tres esquinas y etiqueta "building"; el cierre repetido se quita', b.elements.length === bld.elements.length + 1 && first.geometry.length === ring.length - 1 && b.elements.every( e => e.tags.building && e.geometry.length >= 3 ) );
+	const named = b.elements.find( e => e.id === 4 );
+	report( 'Se guardan solo las etiquetas útiles, recortadas', named && named.tags.name.length === 60 && named.tags[ 'building:levels' ] === '2' && named.tags.roof === undefined );
+	const keys = [ ...localStorage.m.keys() ];
+	report( 'Los edificios quedan en la memoria local, aparte de las calles', keys.length === 1 && keys[ 0 ].startsWith( 'rutasur.edificios.1.' ), keys[ 0 ] );
+	const b2 = await fetchBuildings( LAT, LON, 1500 );
+	report( 'La segunda vez no se consulta, y lo guardado es lo mismo', calls.length === 1 && b2.elements.length === b.elements.length && b2.elements[ 0 ].geometry[ 0 ].lat === first.geometry[ 0 ].lat && b2.elements[ 0 ].tags.building === first.tags.building );
+	globalThis.fetch = async () => json( { remark: 'runtime error: Query timed out', elements: [] } );
+	let err = null;
+	try { await fetchBuildings( LAT + 2, LON, 1500 ); } catch ( e ) { err = e; }
+	report( 'Una consulta sin tiempo en las dos instancias se informa', err && /timed out/.test( err.message ), err && err.message );
+
+	// el mundo del mapa abierto, sin navegador: pide ambas cosas, arma trozos y responde rayos
+	globalThis.localStorage = new Storage();
+	const queries = [];
+	globalThis.fetch = async ( url, opt ) => { const q = decodeURIComponent( String( opt.body ).replace( /^data=/, '' ) ); queries.push( q ); return json( overpassAnswer( q, /\["building"\]/.test( q ) ? bld : full ) ); };
+	const scene = { children: [], add( o ) { this.children.push( o ); }, remove( o ) { this.children = this.children.filter( c => c !== o ); } };
+	const world = new OpenWorld( { scene, lat: LAT, lon: LON } );
+	await world.roads();
+	for ( let i = 0; i < 50 && ! world.city; i ++ ) await new Promise( r => setTimeout( r, 5 ) );
+	report( 'El mundo abierto pide calles y edificios una sola vez cada uno', queries.length === 2 && world.city && world.city.buildings.length === bld.elements.length && world.city.ways.length === 14, `${ queries.length } consultas` );
+	const focus = { x: 0, y: 0, z: 0 };
+	let steps = 0;
+	while ( ! world.ready && steps < 400 ) { world.update( focus, 0.05 ); steps ++; }
+	report( 'Alrededor del foco se levantan los trozos cercanos y la carga queda lista', world.ready && world.chunks.size >= 9 && world.progress.ready, `${ world.chunks.size } trozos en ${ steps } pasos, ${ world.buildMs.toFixed( 0 ) } ms` );
+	const g = world.groundAt( 0, 0 );
+	report( 'Hay suelo plano en el origen', g && Math.abs( g.y ) < 0.05 && g.ny > 0.99, g && `y = ${ g.y.toFixed( 3 ) }` );
+	const far = world.groundAt( 3000, - 3000 );
+	report( 'Lejos de los datos sigue habiendo suelo, el plano de fondo', far && far.y < 0 && far.y > - 0.1, far && `y = ${ far.y.toFixed( 3 ) }` );
+	const bb = world.city.buildings.find( b => Math.hypot( b.cx, b.cz ) < 150 );
+	const dx = bb.cx, dz = bb.cz, d = Math.hypot( dx, dz );
+	const hit = world.terrain.castObstacle( 0, 1, 0, dx / d, 0, dz / d, d );
+	report( 'Un rayo a un metro del suelo hacia un edificio cercano lo toca antes de su centro', hit < d && hit > 0, `${ hit.toFixed( 1 ) } m de ${ d.toFixed( 1 ) }` );
+	const st = world.stats();
+	report( 'Las estadísticas cuentan edificios y vías', st.edificios === bld.elements.length && st.vias === 14 && st.cercanas > 0 );
+	world.update( { x: 5000, y: 0, z: 5000 }, 0.05 ); world.update( { x: 5000, y: 0, z: 5000 }, 0.3 );
+	report( 'Al alejarse, los trozos viejos se liberan', [ ...world.chunks.values() ].every( c => Math.hypot( c.cx - 5000, c.cz - 5000 ) < 1500 ) );
+	world.dispose();
+	report( 'Al cerrar, el mundo sale de la escena', scene.children.length === 0 );
+
+	// sin ninguna de las dos respuestas, el mundo informa el error
+	globalThis.localStorage = new Storage();
+	globalThis.fetch = async () => json( {}, 504 );
+	const w2 = new OpenWorld( { scene, lat: LAT + 3, lon: LON } );
+	await w2.roads().catch( () => {} );
+	for ( let i = 0; i < 50 && ! w2.error; i ++ ) await new Promise( r => setTimeout( r, 5 ) );
+	report( 'Sin OpenStreetMap, el mundo abierto explica el error', /OpenStreetMap/.test( w2.error || '' ) && /504/.test( w2.error || '' ), w2.error );
+	w2.dispose();
 
 }
 

@@ -1,6 +1,6 @@
 # Ruta Sur
 
-Simulador de camiones que corre en el navegador sobre la malla 3D fotorrealista de Google, la misma que muestra Google Earth. El jugador conduce un tracto con semirremolque, o un camión rígido, por las calles de una ciudad real y reparte cargas entre esquinas.
+Simulador de camiones que corre en el navegador sobre la malla 3D fotorrealista de Google, la misma que muestra Google Earth, o sobre un mapa abierto levantado desde OpenStreetMap. El jugador conduce un tracto con semirremolque, o un camión rígido, por las calles de una ciudad real y reparte cargas entre esquinas.
 
 Este es un prototipo. Su propósito es responder una pregunta antes de invertir más: si la malla de Google, vista desde la cabina de un camión, alcanza para un juego de conducción.
 
@@ -10,9 +10,10 @@ Este es un prototipo. Su propósito es responder una pregunta antes de invertir 
 
 1. Abre https://profesergiom.github.io/ruta-sur/ en Chrome o Edge. También puedes guardar `docs/index.html` en el computador y abrirlo con doble clic: es el mismo archivo y funciona igual. Las pruebas corren en Chromium, el motor de ambos navegadores. Firefox no se probó.
 2. Elige "Ciudad de pruebas, sin credencial" para manejar de inmediato en una ciudad generada. Sirve para conocer los controles y, abierta como archivo, funciona sin conexión a internet.
-3. Para manejar sobre el mapa real, pega una credencial (ver abajo), elige ciudad y presiona "Conducir". Esta parte necesita internet.
+3. Elige ciudad y presiona "Mapa abierto (OpenStreetMap), sin credencial" para manejar por las calles verdaderas de esa ciudad, con los edificios de OpenStreetMap como cajas de colores sobre un suelo plano. Necesita internet, pero no credencial.
+4. Para manejar sobre la malla fotorrealista de Google, pega una credencial (ver abajo), elige ciudad y presiona "Conducir". Esta parte necesita internet.
 
-El archivo trae adentro todo lo que el juego necesita: el programa, las bibliotecas, las tipografías y el decodificador de las teselas. Al abrirse no pide nada a la red. La red se usa recién al conducir sobre el mapa real, para pedir las teselas (a Google o a Cesium ion) y las calles (a Overpass).
+El archivo trae adentro todo lo que el juego necesita: el programa, las bibliotecas, las tipografías y el decodificador de las teselas. Al abrirse no pide nada a la red. La red se usa recién al conducir sobre un mapa real: en el mapa abierto, para pedir las calles y los edificios a Overpass; sobre la malla de Google, para pedir las teselas (a Google o a Cesium ion) y las calles.
 
 ### Si se abre dentro de otra aplicación
 
@@ -68,6 +69,8 @@ La primera versión pedía las bibliotecas y las tipografías a servidores exter
 | `geo.js` | Conversión entre latitud y longitud y las coordenadas del juego (WGS84) |
 | `truck-model.js`, `hud.js`, `audio.js`, `input.js` | Modelo 3D del camión, tablero y minimapa, sonido sintetizado, teclado, táctil y mando |
 | `mirrors.js` | Espejos retrovisores: una cámara por espejo dibuja en una textura que va en el vidrio de la cabina y en los recuadros de la pantalla |
+| `openmap.js` | Mapa abierto: convierte las calles y los edificios de OpenStreetMap en franjas de asfalto con vereda y prismas de colores, por trozos. Triangula las plantas por recorte de orejas. No depende de Three.js |
+| `openworld.js` | El mundo del mapa abierto: pide calles y edificios a Overpass, levanta los trozos alrededor del camión y responde los rayos de la física |
 | `main.js` | Pantalla inicial, carga, bucle principal y cámaras |
 | `testcity.js` | Ciudad de pruebas generada, también usada para fabricar un tileset de prueba |
 | `embebidos.js` | Contrato de los recursos que el armado mete en el archivo (el decodificador Draco) |
@@ -75,6 +78,10 @@ La primera versión pedía las bibliotecas y las tipografías a servidores exter
 La plantilla lleva además una **guardia de arranque**: un script corto, escrito con sintaxis antigua, que corre antes que el programa. Instala las tipografías, anota los errores sin atender y los muestra como un informe que se puede copiar. Si el programa no arranca (navegador antiguo, sin WebGL 2, vista que no ejecuta scripts), la página lo dice y propone la salida. El informe cita el archivo por su nombre, sin la ruta del computador.
 
 Convención de ejes: +X al oeste, +Y arriba, +Z al norte, con origen en el punto elegido. Es la que entrega el complemento de reorientación de la biblioteca de teselas.
+
+### Mapa abierto
+
+El tercer mundo del juego no usa fotografía. Las calles salen de la misma consulta a Overpass que la red vial, y se dibujan como franjas de asfalto con una vereda a cada lado y el ancho típico de su clase (una residencial, 7 m; una primaria, 10 m). Los edificios salen de una segunda consulta, de las vías cerradas con etiqueta `building` en 1,5 km alrededor del punto elegido, y se extruyen desde su planta: con la altura que OSM declare (`height`), o con los pisos (`building:levels`, a 3,2 m cada uno), o con una altura típica de su tipo (una casa, 5,5 m; un edificio de departamentos, 15 m), dispersa un poco para que una cuadra no salga pareja. Las plantas cóncavas se triangulan por recorte de orejas. El suelo es plano. Todo se arma por trozos de 120 m alrededor del camión, con un BVH por trozo para la física, y los trozos lejanos se liberan. Los edificios se guardan en el navegador dos semanas, como las calles.
 
 ### Choques
 
@@ -90,12 +97,12 @@ La malla de Google trae forma y textura, pero no sabe qué es una calle. Por eso
 
 ```
 npm install
-npm test          # pruebas numéricas, sin navegador (247 comprobaciones)
+npm test          # pruebas numéricas, sin navegador (289 comprobaciones)
 npm run tileset   # fabrica el tileset sintético que usan las pruebas de extremo a extremo
-npm run e2e       # el juego completo en Chromium sin interfaz, 209 comprobaciones (necesita: npm i -D playwright)
+npm run e2e       # el juego completo en Chromium sin interfaz, 223 comprobaciones (necesita: npm i -D playwright)
 ```
 
-Las pruebas numéricas cubren el modelo del camión (radios de giro contra la teoría, corredor de giro de la norma europea, aceleración, frenado, pendientes, caja de cambios, bajadas, choques frontales y laterales), la geodesia, la red vial y los encargos. `tests/osm-real.test.mjs` usa una muestra real del centro de Temuco (`tests/fixtures/temuco-centro.json`, © OpenStreetMap contributors, ODbL).
+Las pruebas numéricas cubren el modelo del camión (radios de giro contra la teoría, corredor de giro de la norma europea, aceleración, frenado, pendientes, caja de cambios, bajadas, choques frontales y laterales), la geodesia, la red vial, el mapa abierto (triangulación, prismas, trozos, memoria de edificios) y los encargos. `tests/osm-real.test.mjs` usa una muestra real del centro de Temuco (`tests/fixtures/temuco-centro.json`, © OpenStreetMap contributors, ODbL). El entorno de desarrollo no llega a Overpass, así que no hay una muestra real de edificios: `tests/open-fixture.mjs` reparte plantas sintéticas en las manzanas de esa muestra, con las etiquetas que usa el juego.
 
 Las pruebas de extremo a extremo abren `docs/index.html` como archivo local y anotan cada pedido que sale a la red. Los servicios de mapas se simulan en sus direcciones reales, y cada simulación responde como el servicio a lo que el juego pide: Google exige clave y sesión vigente, y Overpass devuelve los campos del nivel de detalle consultado.
 
@@ -103,6 +110,7 @@ Las pruebas de extremo a extremo abren `docs/index.html` como archivo local y an
 |---|---|
 | `e2e-test-city.mjs` | Ciudad de pruebas con teclado: manejo, cámaras, entrega completa, choque frontal, roce lateral y espejos. Sin pedidos a la red |
 | `e2e-touch.mjs` | Lo mismo con pantalla táctil, en tamaño de teléfono, y que los espejos no tapen los botones |
+| `e2e-open.mjs` | Mapa abierto: calles reales del centro de Temuco y edificios sintéticos en sus manzanas, servidos por un Overpass simulado. Partida con el piloto, choque contra un edificio y la carga detenida cuando Overpass falla |
 | `e2e-tiles.mjs` | Camino de teselas: clave de Google, token de Cesium ion, sesión vencida, errores del servicio, calles atrasadas |
 | `e2e-vista-previa.mjs` | El archivo dentro de un marco aislado con política de seguridad estricta, entregado como dirección, `blob:` y `srcdoc`, y en una vista que no ejecuta scripts |
 | `e2e-fallas.mjs` | Sin WebGL, programa que falla al arrancar, error durante la partida y pérdida del contexto gráfico: cada falla queda explicada en pantalla |
@@ -115,6 +123,8 @@ Verificado con el servicio real, desde un navegador:
 
 Verificado solo contra simulaciones:
 
+- **Overpass (edificios).** La consulta de edificios sigue la misma forma que la de calles (`way["building"](around:...)`, `out tags geom`), pero no se pudo enviar al servicio real desde el entorno de desarrollo. Quedan por confirmar en la primera partida: el tamaño de la respuesta en una ciudad densa (1,5 km de Santiago pueden ser decenas de miles de edificios), su tiempo, y si cabe en la memoria local del navegador. Si no cabe, el juego la usa sin guardarla.
+
 - **Google Map Tiles API y Cesium ion.** El entorno de desarrollo no tuvo credenciales ni acceso a esos servicios. El juego se probó contra un tileset sintético con la misma estructura (coordenadas ECEF, tilesets anidados con rutas absolutas, compresión Draco, sesión). Quedan por confirmar en la primera partida real: el aspecto y la escala de la malla desde la cabina, el tamaño y la memoria de las teselas reales, los códigos de error que el servicio devuelve ante una clave inválida, y cuánto cuestan en descargas y memoria las teselas que piden las cámaras de los espejos.
 - **Vista previa de una aplicación.** La prueba arma una vista previa propia: marco aislado de otro origen, sin almacenamiento y con una política de seguridad que solo deja correr el contenido de la página. En esas condiciones la primera versión daba 6 errores al abrir y quedaba sin programa, el mismo síntoma informado al abrir el archivo dentro de la app de Claude. La versión actual abre con 0 errores y 0 pedidos a la red. La vista previa real de cada aplicación puede imponer otras restricciones, que esta prueba no cubre.
 
@@ -122,6 +132,7 @@ Verificado solo contra simulaciones:
 
 - Las sondas de choque van a un metro del suelo. Un balcón o un letrero más alto no detiene al camión, y un auto estacionado sí. Los puntos de cada costado van cada 4,5 m: un poste muy delgado puede entrar entre dos sin que la arista lo note hasta que un punto lo alcanza.
 - Los espejos solo se dibujan en la vista de cabina.
+- En el mapa abierto el suelo es plano: no hay relieve, soleras ni árboles. Los edificios dibujados en OpenStreetMap como relaciones (con patio interior o en varias partes) no aparecen, y los que no declaran altura ni pisos reciben una altura típica de su tipo. Las calles se dibujan con un ancho fijo por clase, sin carriles ni cruces resueltos.
 - Bajo un paso superior la fotogrametría suele cerrar el vano con una pared. El camión se detiene ahí. La tecla G desactiva los choques.
 - El juego supone tránsito por la derecha.
 - La red vial ignora las restricciones de giro de OpenStreetMap (son relaciones, y la consulta trae solo vías).
@@ -156,6 +167,12 @@ El código de Ruta Sur se publica bajo la licencia MIT (ver `LICENSE`). Las obra
 
 ## Cambios
 
+**0.4.0**
+
+- Mapa abierto: un tercer mundo sin credencial, con las calles y los edificios de OpenStreetMap sobre un suelo plano. Encargos, rutas, choques y espejos funcionan igual que sobre la malla de Google.
+- Los edificios se guardan en el navegador dos semanas, aparte de las calles.
+- Portada de respaldo en la raíz del repositorio, por si GitHub Pages publica la raíz en vez de `docs/`.
+
 **0.3.0**
 
 - Choques laterales: los costados del tracto y del semirremolque chocan con edificios, autos y esquinas. Un roce detiene el camión sin dañarlo; un golpe de costado descuenta según la velocidad de acercamiento. En reversa siempre se sale.
@@ -177,6 +194,7 @@ El código de Ruta Sur se publica bajo la licencia MIT (ver `LICENSE`). Las obra
 
 ## Próximos pasos posibles
 
-1. Primera partida real y ajuste de lo que muestre: altura de la cámara, tolerancias del suelo, calidad por defecto, costo de las teselas de los espejos.
-2. Tránsito y semáforos sobre la red vial.
-3. Carreteras: encargos entre ciudades, con carga de calles por tramos.
+1. Primera partida real y ajuste de lo que muestre: altura de la cámara, tolerancias del suelo, calidad por defecto, costo de las teselas de los espejos, tamaño y tiempo de la consulta de edificios en una ciudad grande.
+2. Relieve en el mapa abierto con un modelo de elevación abierto (Copernicus DEM), y árboles y plazas desde las etiquetas de OpenStreetMap.
+3. Tránsito y semáforos sobre la red vial.
+4. Carreteras: encargos entre ciudades, con carga de calles por tramos.

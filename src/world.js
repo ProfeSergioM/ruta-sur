@@ -17,7 +17,7 @@ import {
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { MeshBVH } from 'three-mesh-bvh';
 import { Geo } from './geo.js';
-import { overpassQuery, OVERPASS_ENDPOINTS } from './osm.js';
+import { overpassQuery, buildingsQuery, OVERPASS_ENDPOINTS } from './osm.js';
 import { generateCity, buildRegion, cityChunks, cityRoadsOSM, CITY_START } from './testcity.js';
 import { DRACO, bytesFromBase64 } from './embebidos.js';
 
@@ -139,7 +139,7 @@ const _localRay = new THREE.Ray();
 const _n = new THREE.Vector3();
 const _v = new THREE.Vector3();
 
-class RayField {
+export class RayField {
 
 	constructor() {
 
@@ -248,7 +248,7 @@ class RayField {
 // Rayo largo hacia abajo. Entre teselas vecinas quedan rendijas de milímetros,
 // así que si el rayo central no toca nada se prueba alrededor.
 const PROBE = [ [ 0, 0 ], [ 0.3, 0.2 ], [ - 0.3, - 0.2 ], [ 0.2, - 0.3 ], [ - 0.2, 0.3 ] ];
-function longRay( field, x, z, list ) {
+export function longRay( field, x, z, list ) {
 
 	const was = field.unlimited;
 	field.unlimited = true;
@@ -267,7 +267,7 @@ function longRay( field, x, z, list ) {
 
 // Suelo más cercano a una altura dada: hacia abajo desde 2 m sobre ella y, si no
 // hay nada, la primera superficie que aparece bajando desde 80 m más arriba.
-function nearRay( field, x, z, y, list, above = true ) {
+export function nearRay( field, x, z, y, list, above = true ) {
 
 	const was = field.unlimited;
 	field.unlimited = true;
@@ -288,7 +288,7 @@ function nearRay( field, x, z, y, list, above = true ) {
 }
 
 // La interfaz que consulta la física
-function makeTerrain( field ) {
+export function makeTerrain( field ) {
 
 	return {
 		ny: 1,
@@ -314,6 +314,7 @@ function makeTerrain( field ) {
 // Red vial desde Overpass, con respaldo entre instancias y memoria local
 // ---------------------------------------------------------------------------
 const ROADS_PREFIX = 'rutasur.calles.3.';   // la versión cambia cuando cambia la consulta o el formato guardado
+const BUILDINGS_PREFIX = 'rutasur.edificios.1.';
 const ROADS_OLD = [ 'rutasur.roads.', 'rutasur.calles.2.' ]; // formatos anteriores: se borran al encontrarlos
 const ROADS_TTL = 14 * 864e5;               // dos semanas
 const ROADS_TIMEOUT = 50000;                // espera máxima por instancia [ms]; la consulta pide hasta 40 s al servidor
@@ -341,9 +342,28 @@ function unpackRoads( packed ) {
 
 }
 
-// Redes guardadas, de la más antigua a la más nueva. Borra de paso las vencidas,
-// las dañadas y las de un formato anterior.
-function roadCacheEntries() {
+// Edificios guardados: [ id, [ lat, lon, ... ], etiquetas ]
+function packBuildings( osm ) {
+
+	return osm.elements.map( e => [ e.id, e.geometry.flatMap( p => [ p.lat, p.lon ] ), e.tags ] );
+
+}
+
+function unpackBuildings( packed ) {
+
+	return { elements: packed.map( ( [ id, flat, tags ] ) => {
+
+		const geometry = [];
+		for ( let i = 0; i < flat.length; i += 2 ) geometry.push( { lat: flat[ i ], lon: flat[ i + 1 ] } );
+		return { type: 'way', id, geometry, tags };
+
+	} ) };
+
+}
+
+// Datos guardados con un prefijo (redes o edificios), de los más antiguos a los más
+// nuevos. Borra de paso los vencidos, los dañados y los de un formato anterior.
+function cacheEntries( prefix ) {
 
 	const live = [];
 	try {
@@ -354,7 +374,7 @@ function roadCacheEntries() {
 			const k = localStorage.key( i );
 			if ( ! k ) continue;
 			if ( ROADS_OLD.some( p => k.startsWith( p ) ) ) { drop.push( k ); continue; }
-			if ( ! k.startsWith( ROADS_PREFIX ) ) continue;
+			if ( ! k.startsWith( prefix ) ) continue;
 			let t = NaN;
 			try { t = JSON.parse( localStorage.getItem( k ) ).t; } catch ( e ) { /* entrada dañada */ }
 			if ( Date.now() - t < ROADS_TTL ) live.push( { k, t } ); else drop.push( k );
@@ -369,11 +389,13 @@ function roadCacheEntries() {
 
 }
 
-// Guarda una red. Si no cabe, hace lugar borrando las redes más antiguas.
-function storeRoads( key, slim ) {
+const roadCacheEntries = () => cacheEntries( ROADS_PREFIX );
 
-	const value = JSON.stringify( { t: Date.now(), w: packRoads( slim ) } );
-	const older = roadCacheEntries().filter( e => e.k !== key );
+// Guarda una red o un conjunto de edificios. Si no cabe, hace lugar borrando los más antiguos del mismo tipo.
+function storeCached( prefix, key, packed ) {
+
+	const value = JSON.stringify( { t: Date.now(), w: packed } );
+	const older = cacheEntries( prefix ).filter( e => e.k !== key );
 	for ( ;; ) {
 
 		try { localStorage.setItem( key, value ); return true; } catch ( e ) {
@@ -420,7 +442,7 @@ export async function fetchRoads( lat, lon, radius = 2500 ) {
 			if ( typeof data.remark === 'string' && /error|timed out/i.test( data.remark ) ) throw new Error( `Overpass: ${ data.remark }` );
 			// solo se conserva lo que usa el juego
 			const slim = { elements: data.elements.filter( e => e.type === 'way' && Array.isArray( e.geometry ) ).map( e => ( { type: 'way', id: e.id, nodes: e.nodes, geometry: e.geometry, tags: pickTags( e.tags ) } ) ) };
-			if ( slim.elements.length > 0 ) storeRoads( cacheKey, slim );
+			if ( slim.elements.length > 0 ) storeCached( ROADS_PREFIX, cacheKey, packRoads( slim ) );
 			return slim;
 
 		} catch ( e ) {
@@ -440,6 +462,72 @@ function pickTags( t = {} ) {
 	const out = {};
 	for ( const k of [ 'highway', 'name', 'ref', 'oneway', 'junction', 'maxspeed', 'access', 'vehicle', 'motor_vehicle', 'hgv', 'area' ] ) if ( t[ k ] !== undefined ) out[ k ] = t[ k ];
 	return out;
+
+}
+
+function pickBuildingTags( t = {} ) {
+
+	const out = {};
+	for ( const k of [ 'building', 'height', 'building:levels', 'name' ] ) if ( t[ k ] !== undefined ) out[ k ] = String( t[ k ] ).slice( 0, 60 );
+	return out;
+
+}
+
+// Edificios de OpenStreetMap alrededor de un punto, con la misma memoria local que las calles.
+// Solo las vías cerradas con al menos tres esquinas distintas.
+export async function fetchBuildings( lat, lon, radius = 1500 ) {
+
+	const cacheKey = `${ BUILDINGS_PREFIX }${ lat.toFixed( 3 ) }.${ lon.toFixed( 3 ) }.${ radius }`;
+	cacheEntries( BUILDINGS_PREFIX );
+	try {
+
+		const hit = localStorage.getItem( cacheKey );
+		if ( hit ) {
+
+			const o = JSON.parse( hit );
+			if ( o && Array.isArray( o.w ) ) return unpackBuildings( o.w );
+
+		}
+
+	} catch ( e ) { /* sin almacenamiento local, o entrada ilegible: se consulta de nuevo */ }
+
+	const body = 'data=' + encodeURIComponent( buildingsQuery( lat, lon, radius ) );
+	let lastError = null;
+	for ( const url of OVERPASS_ENDPOINTS ) {
+
+		const ctl = new AbortController();
+		const timer = setTimeout( () => ctl.abort(), ROADS_TIMEOUT );
+		try {
+
+			const res = await fetch( url, { method: 'POST', body, headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, signal: ctl.signal } );
+			if ( ! res.ok ) throw new Error( `Overpass respondió ${ res.status }` );
+			const data = await res.json();
+			if ( ! data.elements ) throw new Error( 'Respuesta de Overpass sin elementos' );
+			if ( typeof data.remark === 'string' && /error|timed out/i.test( data.remark ) ) throw new Error( `Overpass: ${ data.remark }` );
+			const slim = { elements: [] };
+			for ( const e of data.elements ) {
+
+				if ( e.type !== 'way' || ! Array.isArray( e.geometry ) || ! e.tags || ! e.tags.building ) continue;
+				const g = e.geometry.filter( p => p && typeof p.lat === 'number' && typeof p.lon === 'number' );
+				// una vía cerrada repite el primer punto al final
+				if ( g.length > 1 && g[ 0 ].lat === g[ g.length - 1 ].lat && g[ 0 ].lon === g[ g.length - 1 ].lon ) g.pop();
+				if ( g.length < 3 ) continue;
+				slim.elements.push( { type: 'way', id: e.id, geometry: g, tags: pickBuildingTags( e.tags ) } );
+
+			}
+
+			storeCached( BUILDINGS_PREFIX, cacheKey, packBuildings( slim ) );
+			return slim;
+
+		} catch ( e ) {
+
+			lastError = e;
+
+		} finally { clearTimeout( timer ); }
+
+	}
+
+	throw lastError || new Error( 'Overpass no respondió' );
 
 }
 

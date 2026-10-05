@@ -1,12 +1,12 @@
 {
   "name": "ruta-sur",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Simulador de camiones sobre los Photorealistic 3D Tiles de Google, en un solo archivo HTML",
   "scripts": {
     "build": "node tools/build.mjs",
-    "test": "node tests/physics.test.mjs && node tests/geo.test.mjs && node tests/osm.test.mjs && node tests/osm-fuzz.test.mjs && node tests/osm-real.test.mjs && node tests/jobs.test.mjs && node tests/world.test.mjs",
+    "test": "node tests/physics.test.mjs && node tests/geo.test.mjs && node tests/osm.test.mjs && node tests/osm-fuzz.test.mjs && node tests/osm-real.test.mjs && node tests/openmap.test.mjs && node tests/jobs.test.mjs && node tests/world.test.mjs",
     "tileset": "node tools/make-tileset.mjs",
-    "e2e": "node tools/build.mjs && node tests/e2e-test-city.mjs articulado && node tests/e2e-test-city.mjs rigido && node tests/e2e-touch.mjs && node tests/e2e-tiles.mjs && node tests/e2e-tiles.mjs media solo-entrega && node tests/e2e-vista-previa.mjs && node tests/e2e-fallas.mjs"
+    "e2e": "node tools/build.mjs && node tests/e2e-test-city.mjs articulado && node tests/e2e-test-city.mjs rigido && node tests/e2e-touch.mjs && node tests/e2e-open.mjs && node tests/e2e-tiles.mjs && node tests/e2e-tiles.mjs media solo-entrega && node tests/e2e-vista-previa.mjs && node tests/e2e-fallas.mjs"
   },
   "license": "MIT",
   "dependencies": {
