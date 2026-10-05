@@ -180,17 +180,26 @@ const full = cityRoadsOSM( geo );
 	report( 'Fuera de un navegador no se supone un marco', EMBEDDED === false );
 	noteBlocked( 'inline' ); noteBlocked( '' ); noteBlocked( undefined ); // avisos sin dirección: se ignoran
 	report( 'Sin pedidos bloqueados, nada se atribuye a la vista', ! viewBlocks( 'overpass-api.de', 'private.coffee' ) );
-	noteBlocked( 'https://overpass-api.de/api/interpreter' );
-	report( 'Un pedido bloqueado queda anotado por servidor', viewBlocks( 'overpass-api.de' ) && viewBlocks( 'private.coffee', 'overpass-api.de' ) && ! viewBlocks( 'private.coffee' ) && ! viewBlocks( 'api.de' ) );
-	// con el pedido bloqueado, el mundo abierto explica la causa y la salida
+	// el aviso de bloqueo llega después de que el pedido falla: el mundo abierto primero dice
+	// "sin respuesta" y, cuando llega el aviso, corrige el mensaje solo
 	globalThis.localStorage = new Storage();
 	globalThis.fetch = async () => { throw new TypeError( 'Failed to fetch' ); };
 	const scene = { children: [], add( o ) { this.children.push( o ); }, remove( o ) { this.children = this.children.filter( c => c !== o ); } };
+	const late = new OpenWorld( { scene, lat: LAT + 5, lon: LON + 1 } );
+	await late.roads().catch( () => {} );
+	for ( let i = 0; i < 50 && ! late.error; i ++ ) await new Promise( r => setTimeout( r, 5 ) );
+	const first = late.error;
+	noteBlocked( 'https://overpass-api.de/api/interpreter' );
+	report( 'Si el aviso de bloqueo llega tarde, el mensaje pasa de "sin respuesta" a "la vista bloquea"', /no hubo respuesta/.test( first || '' ) && ! /Failed to fetch/.test( first || '' ) && /bloquea la conexión/.test( late.error || '' ), `${ first } -> ${ late.error }` );
+	late.dispose();
+	report( 'Un pedido bloqueado queda anotado por servidor', viewBlocks( 'overpass-api.de' ) && viewBlocks( 'private.coffee', 'overpass-api.de' ) && ! viewBlocks( 'private.coffee' ) && ! viewBlocks( 'api.de' ) );
+	// con el pedido ya bloqueado, el mundo abierto explica la causa y la salida de inmediato
 	const w = new OpenWorld( { scene, lat: LAT + 4, lon: LON } );
 	await w.roads().catch( () => {} );
 	for ( let i = 0; i < 50 && ! w.error; i ++ ) await new Promise( r => setTimeout( r, 5 ) );
 	report( 'Con OpenStreetMap bloqueado por la vista, el mensaje dice la causa y la salida', /bloquea la conexión con OpenStreetMap/.test( w.error || '' ) && /doble clic en Chrome o Edge/.test( w.error || '' ) && /ciudad de pruebas funciona/.test( w.error || '' ), w.error );
 	w.dispose();
+
 
 }
 

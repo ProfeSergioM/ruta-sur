@@ -7,7 +7,7 @@
 
 import * as THREE from 'three';
 import { Geo } from './geo.js';
-import { RayField, makeTerrain, longRay, nearRay, fetchRoads, fetchBuildings, viewBlocks, BLOCKED_ADVICE } from './world.js';
+import { RayField, makeTerrain, longRay, nearRay, fetchRoads, fetchBuildings, viewBlocks, blockedListeners, BLOCKED_ADVICE } from './world.js';
 import { openCity, chunkIndex, buildOpenChunk, groundPlane, chunkOf, OPEN, LAYERS } from './openmap.js';
 
 export class OpenWorld {
@@ -48,18 +48,34 @@ export class OpenWorld {
 	// La red vial, compartida con la carga de la partida (una sola consulta)
 	roads() { return this._roads; }
 
+	// Sin respuesta de OpenStreetMap: la causa y la salida. El aviso de un pedido bloqueado
+	// por la vista llega un instante después de que el pedido falla, así que si todavía no
+	// hay bloqueo anotado se queda escuchando y vuelve a explicar cuando llegue.
+	_explain() {
+
+		if ( this.disposed ) return;
+		if ( viewBlocks( 'overpass-api.de', 'private.coffee' ) ) {
+
+			this.error = `La vista donde está abierto el juego bloquea la conexión con OpenStreetMap. ${ BLOCKED_ADVICE } La ciudad de pruebas funciona en esta vista.`;
+			this._unlisten();
+
+		} else {
+
+			const msg = this.roadsError && this.roadsError.message;
+			const net = /Failed to fetch|NetworkError|Load failed/i.test( msg || '' );
+			this.error = `No se pudo leer OpenStreetMap: ${ net ? 'no hubo respuesta del servicio' : ( msg || 'el servicio no respondió' ) }. Revisa la conexión a internet y vuelve a intentar.`;
+			if ( ! this._onBlocked ) { this._onBlocked = () => this._explain(); blockedListeners.add( this._onBlocked ); }
+
+		}
+
+	}
+
+	_unlisten() { if ( this._onBlocked ) { blockedListeners.delete( this._onBlocked ); this._onBlocked = null; } }
+
 	_assemble() {
 
 		if ( this.disposed ) return;
-		if ( ! this.roadsData && ! this.buildingsData ) {
-
-			const blocked = viewBlocks( 'overpass-api.de', 'private.coffee' );
-			this.error = blocked
-				? `La vista donde está abierto el juego bloquea la conexión con OpenStreetMap. ${ BLOCKED_ADVICE } La ciudad de pruebas funciona en esta vista.`
-				: `No se pudo leer OpenStreetMap: ${ ( this.roadsError && this.roadsError.message ) || 'el servicio no respondió' }. Revisa la conexión a internet y vuelve a intentar.`;
-			return;
-
-		}
+		if ( ! this.roadsData && ! this.buildingsData ) return this._explain();
 
 		this.city = openCity( this.roadsData || { elements: [] }, this.buildingsData || { elements: [] }, this.geo );
 		chunkIndex( this.city, OPEN.chunk );
@@ -199,6 +215,7 @@ export class OpenWorld {
 	dispose() {
 
 		this.disposed = true;
+		this._unlisten();
 		this.scene.remove( this.group );
 		for ( const c of this.chunks.values() ) for ( const m of c.meshes ) m.geometry.dispose();
 		this.chunks.clear();

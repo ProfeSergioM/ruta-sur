@@ -24,7 +24,7 @@ import { generateCity, buildRegion, cityChunks, cityRoadsOSM, CITY_START } from 
 // servidores. El navegador lo avisa con un evento por cada pedido bloqueado: con eso
 // el juego puede decir la causa real, en vez de suponer una falla de la conexión.
 const blockedHosts = new Set();
-const blockedListeners = new Set(); // a quién avisar cuando se anota un servidor bloqueado
+export const blockedListeners = new Set(); // a quién avisar cuando se anota un servidor bloqueado
 if ( typeof document !== 'undefined' && document.addEventListener ) {
 
 	document.addEventListener( 'securitypolicyviolation', e => noteBlocked( e.blockedURI ) );
