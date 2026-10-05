@@ -14,6 +14,7 @@
 
 import { ROAD_CLASSES, buildingHeight, featureKind } from './osm.js';
 import { MeshBuilder, valueNoise } from './testcity.js';
+import { utilityPole, parkedCar, busStop, bench, bin, roadSign, trafficLight, SIGNS, CAR_COLORS } from './furniture.js';
 
 export const OPEN = {
 	chunk: 120,          // lado de cada trozo de malla [m]
@@ -43,6 +44,8 @@ const COLORS = {
 export const WINDOW_METERS = { u: 4, v: 3.2 };  // una celda de la textura de fachada: 4 m de ancho por un piso de alto
 export const GROUND_METERS = 18;                // la textura de pasto se repite cada tantos metros
 const TREE_SPACING = 16, LAMP_SPACING = 34;     // separación de los árboles de vereda y de los faroles [m]
+const POLE_SPACING = 28, PARK_SPACING = 7.5, STOP_SPACING = 110, SIGN_SPACING = 150; // postes, autos estacionados, paraderos y señales de velocidad [m]
+const MAJOR = 8;                                // desde este ancho de calzada una vía es principal: faroles, estacionados, paraderos, semáforos [m]
 const PALETTE = [ [ 0.72, 0.69, 0.63 ], [ 0.62, 0.6, 0.58 ], [ 0.75, 0.72, 0.7 ], [ 0.58, 0.52, 0.46 ], [ 0.66, 0.68, 0.7 ], [ 0.7, 0.62, 0.55 ], [ 0.52, 0.55, 0.58 ], [ 0.74, 0.66, 0.58 ], [ 0.6, 0.64, 0.6 ] ];
 // la luz viene del mismo lado que el sol del juego (-0.5, 1, 0.35)
 const LX = - 0.5 / Math.hypot( 0.5, 0.35 ), LZ = 0.35 / Math.hypot( 0.5, 0.35 );
@@ -215,21 +218,21 @@ function patch( mb, poly, y, col ) {
 }
 
 // Árbol: tronco y copa, con la altura y el verde que diga la semilla
-export function tree( mb, x, z, seed ) {
+export function tree( mb, x, z, seed, solid = mb ) {
 
 	const h = 5 + 5 * hashId( seed ), r = 1.6 + 1.8 * hashId( seed + 11 );
 	const leaf = COLORS.leaf[ Math.floor( hashId( seed + 23 ) * COLORS.leaf.length ) ];
-	mb.frustum( x, z, - 0.1, 0.5, 0.5, h * 0.5, 0.1, COLORS.trunk );
+	solid.frustum( x, z, - 0.1, 0.5, 0.5, h * 0.5, 0.1, COLORS.trunk ); // el tronco choca; la copa no
 	mb.blob( x, h * 0.72, z, r, h * 0.38, leaf );
 
 }
 
 // Farol: poste y brazo hacia la calle en `mb`; la lámpara en `glow` (de noche se enciende) y,
 // en `pool`, un disco de luz sobre la calzada que se dibuja sumando (claro al centro, nada al borde)
-export function lamp( mb, glow, pool, x, z, towardX, towardZ ) {
+export function lamp( mb, glow, pool, x, z, towardX, towardZ, solid = mb ) {
 
 	const H = 8;
-	mb.box( x - 0.09, x + 0.09, z - 0.09, z + 0.09, 0, H, COLORS.post );
+	solid.box( x - 0.09, x + 0.09, z - 0.09, z + 0.09, 0, H, COLORS.post ); // el poste choca; el brazo no
 	const ax = x + towardX * 0.8, az = z + towardZ * 0.8;
 	mb.box( Math.min( x, ax ) - 0.05, Math.max( x, ax ) + 0.05, Math.min( z, az ) - 0.05, Math.max( z, az ) + 0.05, H - 0.1, H, COLORS.post );
 	glow.box( ax - 0.3, ax + 0.3, az - 0.3, az + 0.3, H - 0.3, H, COLORS.lamp, 1 );
@@ -327,7 +330,36 @@ export function openCity( roads, buildings, geo ) {
 
 	}
 
-	return { ways, buildings: list, greens, trees, chunk: OPEN.chunk, index: null };
+	return { ways, buildings: list, greens, trees, crossings: findCrossings( ways ), chunk: OPEN.chunk, index: null };
+
+}
+
+// Cruces: puntos que comparten dos vías o más (o donde una vía toca el interior de otra).
+// Cada cruce guarda sus aproximaciones: hacia dónde sale cada vía y con qué ancho.
+export function findCrossings( ways ) {
+
+	const at = new Map();
+	const key = p => `${ Math.round( p.x * 5 ) },${ Math.round( p.z * 5 ) }`; // a 20 cm
+	ways.forEach( ( w, wi ) => w.pts.forEach( ( p, k ) => {
+
+		const kk = key( p );
+		let c = at.get( kk );
+		if ( ! c ) at.set( kk, c = { x: p.x, z: p.z, ways: new Set(), approaches: [] } );
+		c.ways.add( wi );
+		for ( const q of [ w.pts[ k - 1 ], w.pts[ k + 1 ] ] ) {
+
+			if ( ! q ) continue;
+			const dx = q.x - p.x, dz = q.z - p.z, len = Math.hypot( dx, dz );
+			if ( len < 1e-6 ) continue;
+			c.approaches.push( { wi, width: w.width, ux: dx / len, uz: dz / len } );
+
+		}
+
+	} ) );
+	const out = [];
+	// dos vías que solo se continúan (cambia el nombre) tienen dos aproximaciones: no es un cruce
+	for ( const c of at.values() ) if ( c.ways.size >= 2 && c.approaches.length >= 3 ) out.push( { x: c.x, z: c.z, ways: [ ...c.ways ], approaches: c.approaches } );
+	return out;
 
 }
 
@@ -340,7 +372,7 @@ export const chunkOf = ( v, size = OPEN.chunk ) => Math.floor( v / size );
 export function chunkIndex( city, size = OPEN.chunk ) {
 
 	const map = new Map();
-	const get = ( i, j ) => { const k = key( i, j ); let c = map.get( k ); if ( ! c ) { c = { segments: [], buildings: [], greens: [], trees: [] }; map.set( k, c ); } return c; };
+	const get = ( i, j ) => { const k = key( i, j ); let c = map.get( k ); if ( ! c ) { c = { segments: [], buildings: [], greens: [], trees: [], crossings: [] }; map.set( k, c ); } return c; };
 	city.ways.forEach( ( w, wi ) => {
 
 		for ( let s = 0; s < w.pts.length - 1; s ++ ) {
@@ -360,6 +392,7 @@ export function chunkIndex( city, size = OPEN.chunk ) {
 
 	} );
 	( city.trees || [] ).forEach( ( t, ti ) => get( chunkOf( t.x, size ), chunkOf( t.z, size ) ).trees.push( ti ) );
+	( city.crossings || [] ).forEach( ( c, ci ) => get( chunkOf( c.x, size ), chunkOf( c.z, size ) ).crossings.push( ci ) );
 	city.index = map; city.chunk = size;
 	return map;
 
@@ -369,16 +402,20 @@ export function chunkIndex( city, size = OPEN.chunk ) {
  * Mallas del trozo (i, j), en capas que el mundo dibuja con desplazamiento de polígono
  * creciente, para que el orden no dependa de la precisión del búfer de profundidad:
  * suelo, manchas (plazas y agua), veredas, calzadas y líneas centrales. Aparte van los
- * edificios (con su textura de fachada) y la decoración (árboles y faroles). Las capas
- * planas van a milímetros una de otra; de lejos, sin el desplazamiento, se mezclarían.
- * Solo el suelo y los edificios responden los rayos de la física.
+ * edificios (con su textura de fachada), la decoración (copas, brazos y techos) y lo sólido
+ * (troncos, postes, estacionados, paraderos, bancas). Las capas planas van a milímetros una
+ * de otra; de lejos, sin el desplazamiento, se mezclarían. El suelo, los edificios y lo
+ * sólido responden los rayos de la física.
  */
 export function buildOpenChunk( city, i, j ) {
 
 	const size = city.chunk, x0 = i * size, z0 = j * size, x1 = x0 + size, z1 = z0 + size;
 	const mb = new MeshBuilder(), walk = new MeshBuilder(), road = new MeshBuilder(), line = new MeshBuilder();
 	const bld = new MeshBuilder(), park = new MeshBuilder(), decor = new MeshBuilder(), glow = new MeshBuilder(), pool = new MeshBuilder();
-	const entry = ( city.index || chunkIndex( city, size ) ).get( key( i, j ) ) || { segments: [], buildings: [], greens: [], trees: [] };
+	const solid = new MeshBuilder(), sign = new MeshBuilder();
+	const entry = ( city.index || chunkIndex( city, size ) ).get( key( i, j ) ) || { segments: [], buildings: [], greens: [], trees: [], crossings: [] };
+	const objects = [];                 // { kind, x, z } de cada pieza puesta, para las pruebas y el minimapa
+	const counts = { poles: 0, parked: 0, stops: 0, signs: 0, lights: 0, benches: 0 };
 	const within = ( x, z ) => x >= x0 && x < x1 && z >= z0 && z < z1;
 
 	// suelo: una grilla chica con un leve moteado y la textura de pasto en metros del mundo
@@ -428,7 +465,7 @@ export function buildOpenChunk( city, i, j ) {
 
 	};
 
-	const plant = ( x, z, seed ) => { if ( count < MAX_TREES && free( x, z ) ) { tree( decor, x, z, seed ); count ++; } };
+	const plant = ( x, z, seed ) => { if ( count < MAX_TREES && free( x, z ) ) { tree( decor, x, z, seed, solid ); count ++; objects.push( { kind: 'arbol', x, z } ); } };
 	for ( const ti of entry.trees || [] ) { const t = city.trees[ ti ]; plant( t.x, t.z, t.id ); }
 	for ( const g of greens ) {
 
@@ -440,6 +477,18 @@ export function buildOpenChunk( city, i, j ) {
 			if ( ! g.wooded && hashId( seed + 5 ) < 0.45 ) continue;
 			const px = x + ( hashId( seed ) - 0.5 ) * step * 0.6, pz = z + ( hashId( seed + 1 ) - 0.5 ) * step * 0.6;
 			if ( inside( px, pz, g.poly ) ) plant( px, pz, seed );
+
+		}
+
+		// bancas y un basurero en las plazas (no en los bosques)
+		if ( g.wooded || Math.abs( signedArea( g.poly ) ) < 300 ) continue;
+		for ( let b = 0; b < 3; b ++ ) {
+
+			const seed = g.id * 17 + b * 101, th = hashId( seed ) * Math.PI * 2, r = 4 + 5 * hashId( seed + 1 );
+			const x = g.cx + Math.cos( th ) * r, z = g.cz + Math.sin( th ) * r;
+			if ( ! inside( x, z, g.poly ) || ! free( x, z ) ) continue;
+			bench( solid, x, z, th + Math.PI / 2 ); counts.benches ++; objects.push( { kind: 'banca', x, z } );
+			if ( b === 0 ) { const bx = x + Math.cos( th ) * 1.6, bz = z + Math.sin( th ) * 1.6; if ( inside( bx, bz, g.poly ) ) { bin( solid, bx, bz, th ); objects.push( { kind: 'basurero', x: bx, z: bz } ); } }
 
 		}
 
@@ -465,45 +514,151 @@ export function buildOpenChunk( city, i, j ) {
 	for ( let s = 0; s < segs.length; s += 2 ) {
 
 		const wi = segs[ s ], w = city.ways[ wi ], k = segs[ s + 1 ], p = w.pts[ k ], q = w.pts[ k + 1 ];
-		if ( ! w.along || w.width < 7 ) continue;
+		if ( ! w.along || w.width < 5 ) continue;
 		const a0 = w.along[ k ], a1 = w.along[ k + 1 ], len = a1 - a0;
 		if ( len < 1e-6 ) continue;
 		const dx = ( q.x - p.x ) / len, dz = ( q.z - p.z ) / len, nx = - dz, nz = dx;
-		const offset = w.width / 2 + SIDEWALK - 0.55;
-		for ( let t = Math.ceil( ( a0 + 6 ) / TREE_SPACING ) * TREE_SPACING; t < a1 - 4; t += TREE_SPACING ) {
+		// rumbo de quien avanza de p a q (yaw del juego) y el contrario; a la derecha del avance queda side = 1
+		const yawFwd = Math.atan2( - dx, - dz ), yawBack = Math.atan2( dx, dz );
+		const at = ( t, side, off ) => [ p.x + dx * ( t - a0 ) + nx * off * side, p.z + dz * ( t - a0 ) + nz * off * side ];
+		// lo ya puesto en este tramo, para que nada quede encima de otra cosa
+		const taken = [];
+		const clear = ( x, z, r = 3 ) => { for ( const o of taken ) if ( Math.hypot( o[ 0 ] - x, o[ 1 ] - z ) < r ) return false; return true; };
+		const ok = ( x, z, r ) => within( x, z ) && ! nearOtherRoad( x, z, wi ) && free( x, z ) && clear( x, z, r );
+		const major = w.width >= MAJOR;
 
-			const d = t - a0, bx = p.x + dx * d, bz = p.z + dz * d;
-			for ( const side of [ - 1, 1 ] ) {
+		// árboles de vereda, en las calles de 7 m o más
+		if ( w.width >= 7 ) {
 
-				const seed = w.id * 13 + Math.round( t ) * 3 + side;
-				if ( hashId( seed + 2 ) < 0.3 ) continue; // no toda vereda tiene su árbol
-				const x = bx + nx * offset * side, z = bz + nz * offset * side;
-				if ( ! within( x, z ) || nearOtherRoad( x, z, wi ) ) continue;
-				plant( x, z, seed );
+			const offset = w.width / 2 + SIDEWALK - 0.55;
+			for ( let t = Math.ceil( ( a0 + 6 ) / TREE_SPACING ) * TREE_SPACING; t < a1 - 4; t += TREE_SPACING ) {
+
+				for ( const side of [ - 1, 1 ] ) {
+
+					const seed = w.id * 13 + Math.round( t ) * 3 + side;
+					if ( hashId( seed + 2 ) < 0.3 ) continue; // no toda vereda tiene su árbol
+					const [ x, z ] = at( t, side, offset );
+					if ( ! within( x, z ) || nearOtherRoad( x, z, wi ) ) continue;
+					plant( x, z, seed ); taken.push( [ x, z ] );
+
+				}
 
 			}
 
 		}
 
-		if ( w.width < 8 ) continue; // faroles desde las vías terciarias hacia arriba
+		// postes de luz en las calles menores, alternando de lado
+		if ( ! major ) {
+
+			for ( let t = Math.ceil( ( a0 + 9 ) / POLE_SPACING ) * POLE_SPACING; t < a1 - 3; t += POLE_SPACING ) {
+
+				const side = ( Math.round( t / POLE_SPACING ) % 2 ) * 2 - 1;
+				const [ x, z ] = at( t, side, w.width / 2 + SIDEWALK - 0.35 );
+				if ( ! ok( x, z, 2.5 ) ) continue;
+				utilityPole( solid, decor, x, z, side > 0 ? yawFwd : yawBack ); counts.poles ++; taken.push( [ x, z ] ); objects.push( { kind: 'poste', x, z } );
+
+			}
+
+		}
+
+		if ( ! major ) continue; // desde aquí, solo vías principales (terciarias y mayores)
+
+		// faroles
 		for ( let t = Math.ceil( ( a0 + 3 ) / LAMP_SPACING ) * LAMP_SPACING; t < a1 - 2; t += LAMP_SPACING ) {
 
-			const d = t - a0, side = ( Math.round( t / LAMP_SPACING ) % 2 ) * 2 - 1;
-			const x = p.x + dx * d + nx * ( w.width / 2 + 0.5 ) * side, z = p.z + dz * d + nz * ( w.width / 2 + 0.5 ) * side;
+			const side = ( Math.round( t / LAMP_SPACING ) % 2 ) * 2 - 1;
+			const [ x, z ] = at( t, side, w.width / 2 + 0.5 );
 			if ( ! within( x, z ) || nearOtherRoad( x, z, wi ) ) continue;
-			lamp( decor, glow, pool, x, z, - nx * side, - nz * side );
-			lampsOf.push( x );
+			lamp( decor, glow, pool, x, z, - nx * side, - nz * side, solid );
+			lampsOf.push( x ); taken.push( [ x, z ] ); objects.push( { kind: 'farol', x, z } );
+
+		}
+
+		// paraderos sobre la vereda, abiertos hacia la calle, con su señal
+		for ( let t = Math.ceil( ( a0 + 25 ) / STOP_SPACING ) * STOP_SPACING; t < a1 - 8; t += STOP_SPACING ) {
+
+			const side = ( Math.round( t / STOP_SPACING ) % 2 ) * 2 - 1;
+			const [ x, z ] = at( t, side, w.width / 2 + 1.0 );
+			if ( ! ok( x, z, 4 ) ) continue;
+			const yaw = side > 0 ? yawBack : yawFwd; // de frente a la calle
+			busStop( solid, decor, x, z, yaw ); counts.stops ++; taken.push( [ x, z ] ); objects.push( { kind: 'paradero', x, z } );
+			const [ sx, sz ] = at( t + 2.6, side, w.width / 2 + 0.45 );
+			if ( within( sx, sz ) ) { roadSign( solid, sign, sx, sz, side > 0 ? yawFwd : yawBack, SIGNS.paradero, 0.6 ); counts.signs ++; taken.push( [ sx, sz ] ); objects.push( { kind: 'senal', x: sx, z: sz } ); }
+
+		}
+
+		// señales de velocidad máxima, una por sentido, a la derecha de quien avanza
+		for ( let t = Math.ceil( ( a0 + 20 ) / SIGN_SPACING ) * SIGN_SPACING; t < a1 - 5; t += SIGN_SPACING ) {
+
+			const side = ( Math.round( t / SIGN_SPACING ) % 2 ) * 2 - 1;
+			const [ x, z ] = at( t, side, w.width / 2 + 0.45 );
+			if ( ! ok( x, z, 2.5 ) ) continue;
+			roadSign( solid, sign, x, z, side > 0 ? yawFwd : yawBack, SIGNS.velocidad ); counts.signs ++; taken.push( [ x, z ] ); objects.push( { kind: 'senal', x, z } );
+
+		}
+
+		// autos estacionados junto a la solera, con dos ruedas sobre la vereda, mirando en el sentido de su lado
+		for ( let t = Math.ceil( ( a0 + 4 ) / PARK_SPACING ) * PARK_SPACING; t < a1 - 3; t += PARK_SPACING ) {
+
+			for ( const side of [ - 1, 1 ] ) {
+
+				const seed = w.id * 29 + Math.round( t ) * 5 + side;
+				if ( hashId( seed + 3 ) < 0.45 ) continue;
+				const [ x, z ] = at( t, side, w.width / 2 + 0.3 );
+				if ( ! ok( x, z, 3.6 ) ) continue;
+				parkedCar( solid, x, z, side > 0 ? yawFwd : yawBack, CAR_COLORS[ Math.floor( hashId( seed ) * CAR_COLORS.length ) ], hashId( seed + 1 ) );
+				counts.parked ++; taken.push( [ x, z ] ); objects.push( { kind: 'estacionado', x, z, yaw: side > 0 ? yawFwd : yawBack } );
+
+			}
 
 		}
 
 	}
 
-	return { ground: mb.finish(), buildings: bld.finish(), park: park.finish(), walk: walk.finish(), road: road.finish(), line: line.finish(), decor: decor.finish(), glow: glow.finish(), pool: pool.finish(), trees: count, lamps: lampsOf.length };
+	// cruces: semáforos donde se encuentran dos vías principales; discos Pare donde una menor llega a una principal
+	for ( const ci of entry.crossings || [] ) {
+
+		const c = city.crossings[ ci ];
+		const majors = c.approaches.filter( a => a.width >= MAJOR ), minors = c.approaches.filter( a => a.width < MAJOR );
+		const majorWays = new Set( majors.map( a => a.wi ) );
+		const widest = Math.max( ...c.approaches.map( a => a.width ) );
+		if ( majorWays.size >= 2 ) {
+
+			const first = majors[ 0 ].wi;
+			for ( const a of majors ) {
+
+				// esquina derecha de quien llega por esta aproximación (viene en el sentido -u)
+				const other = Math.max( ...c.approaches.filter( b => b.wi !== a.wi ).map( b => b.width ) );
+				const x = c.x + a.ux * ( other / 2 + SIDEWALK + 0.4 ) + a.uz * ( a.width / 2 + 0.5 );
+				const z = c.z + a.uz * ( other / 2 + SIDEWALK + 0.4 ) - a.ux * ( a.width / 2 + 0.5 );
+				if ( ! within( x, z ) || ! free( x, z ) ) continue;
+				trafficLight( solid, decor, glow, x, z, Math.atan2( a.ux, a.uz ), a.wi === first ? 'green' : 'red' );
+				counts.lights ++; objects.push( { kind: 'semaforo', x, z } );
+
+			}
+
+		} else if ( majors.length > 0 ) {
+
+			for ( const a of minors ) {
+
+				const x = c.x + a.ux * ( widest / 2 + SIDEWALK + 1.5 ) + a.uz * ( a.width / 2 + 0.45 );
+				const z = c.z + a.uz * ( widest / 2 + SIDEWALK + 1.5 ) - a.ux * ( a.width / 2 + 0.45 );
+				if ( ! within( x, z ) || ! free( x, z ) ) continue;
+				roadSign( solid, sign, x, z, Math.atan2( a.ux, a.uz ), SIGNS.pare, 0.7 );
+				counts.signs ++; objects.push( { kind: 'senal', x, z } );
+
+			}
+
+		}
+
+	}
+
+	return { ground: mb.finish(), buildings: bld.finish(), park: park.finish(), walk: walk.finish(), road: road.finish(), line: line.finish(), decor: decor.finish(), glow: glow.finish(), pool: pool.finish(), solid: solid.finish(), sign: sign.finish(), trees: count, lamps: lampsOf.length, objects, ...counts };
 
 }
 
-export const LAYERS = [ 'ground', 'buildings', 'park', 'walk', 'road', 'line', 'decor', 'glow', 'pool' ];
-export const RAY_LAYERS = [ 'ground', 'buildings' ]; // las que responden los rayos de la física
+export const LAYERS = [ 'ground', 'buildings', 'park', 'walk', 'road', 'line', 'decor', 'glow', 'pool', 'solid', 'sign' ];
+export const RAY_LAYERS = [ 'ground', 'buildings', 'solid' ]; // las que responden los rayos de la física
 
 // Cerros brumosos en el horizonte: un anillo de lomas con alturas de ruido, decorativo.
 // Tres vueltas de vértices (pie interior, cresta, pie exterior); el color sube del

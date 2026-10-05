@@ -3,9 +3,10 @@
 import { readFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { signedArea, triangulate, prism, openCity, chunkIndex, buildOpenChunk, groundPlane, hillRing, chunkOf, hashId, ROAD_WIDTH, OPEN, LAYERS, TEXTURE_METERS } from '../src/openmap.js';
-import { buildingHeight, buildingsQuery } from '../src/osm.js';
+import { signedArea, triangulate, prism, openCity, chunkIndex, buildOpenChunk, groundPlane, hillRing, chunkOf, hashId, ROAD_WIDTH, OPEN, LAYERS, RAY_LAYERS, TEXTURE_METERS } from '../src/openmap.js';
+import { boxAt } from '../src/furniture.js';
 import { MeshBuilder } from '../src/testcity.js';
+import { buildingHeight, buildingsQuery } from '../src/osm.js';
 import { Geo } from '../src/geo.js';
 import { syntheticBuildings } from './open-fixture.mjs';
 
@@ -91,6 +92,21 @@ const triArea = ( poly, tris ) => { let a = 0; for ( let i = 0; i < tris.length;
 	const buildings = syntheticBuildings( roads, geo );
 	const bWays = buildings.elements.filter( e => e.tags.building ), gWays = buildings.elements.filter( e => e.tags.leisure || e.tags.natural === 'water' ), tNodes = buildings.elements.filter( e => e.type === 'node' );
 	report( 'La muestra sintética tiene edificios con plantas cerradas, plazas, agua y árboles', bWays.length > 100 && gWays.length > 10 && tNodes.length > 10 && bWays.every( e => e.geometry[ 0 ].lat === e.geometry[ e.geometry.length - 1 ].lat ), `${ bWays.length } edificios, ${ gWays.length } manchas, ${ tNodes.length } árboles` );
+	// una caja girada tiene la misma orientación que las de la ciudad de pruebas: la tapa mira hacia arriba
+	{
+
+		const a = new MeshBuilder(), b = new MeshBuilder();
+		a.box( - 1, 1, - 2, 2, 0, 1, [ 1, 1, 1 ] ); boxAt( b, 0, 0, 0, 4, 2, 0, 1, [ 1, 1, 1 ] );
+		const top = m => { const P = m.p, I = m.i; let up = 0, down = 0; for ( let k = 0; k < I.length; k += 3 ) { const [ i0, i1, i2 ] = [ I[ k ], I[ k + 1 ], I[ k + 2 ] ]; if ( P[ i0 * 3 + 1 ] !== 1 || P[ i1 * 3 + 1 ] !== 1 || P[ i2 * 3 + 1 ] !== 1 ) continue; const ux = P[ i1 * 3 ] - P[ i0 * 3 ], uz = P[ i1 * 3 + 2 ] - P[ i0 * 3 + 2 ], vx = P[ i2 * 3 ] - P[ i0 * 3 ], vz = P[ i2 * 3 + 2 ] - P[ i0 * 3 + 2 ]; if ( uz * vx - ux * vz > 0 ) up ++; else down ++; } return { up, down }; };
+		const ta = top( a ), tb = top( b );
+		report( 'Las cajas giradas del mobiliario miran hacia arriba, como las de la ciudad de pruebas', ta.up === 2 && ta.down === 0 && tb.up === 2 && tb.down === 0, `ciudad ${ ta.up }/${ ta.down }, mobiliario ${ tb.up }/${ tb.down }` );
+		const c = new MeshBuilder(); boxAt( c, 10, 20, Math.PI / 2, 4, 2, 0, 1, [ 1, 1, 1 ] );
+		let minX = Infinity, maxX = - Infinity, minZ = Infinity, maxZ = - Infinity;
+		for ( let k = 0; k < c.p.length; k += 3 ) { minX = Math.min( minX, c.p[ k ] ); maxX = Math.max( maxX, c.p[ k ] ); minZ = Math.min( minZ, c.p[ k + 2 ] ); maxZ = Math.max( maxZ, c.p[ k + 2 ] ); }
+		report( 'Girada 90°, el largo de la caja queda a lo ancho', Math.abs( maxX - minX - 4 ) < 1e-9 && Math.abs( maxZ - minZ - 2 ) < 1e-9 && Math.abs( ( minX + maxX ) / 2 - 10 ) < 1e-9 && Math.abs( ( minZ + maxZ ) / 2 - 20 ) < 1e-9 );
+
+	}
+
 	const city = openCity( roads, buildings, geo );
 	report( 'Las manchas y los árboles mapeados pasan a la ciudad con su tipo', city.greens.length === gWays.length && city.trees.length === tNodes.length && city.greens.some( g => g.kind === 'water' ) && city.greens.some( g => g.kind === 'green' ), `${ city.greens.length } manchas, ${ city.trees.length } árboles` );
 	const known = roads.elements.filter( e => ROAD_WIDTH[ e.tags.highway ] ).length;
@@ -156,7 +172,45 @@ const triArea = ( poly, tris ) => { let a = 0; for ( let i = 0; i < tris.length;
 	// con faroles, hay lámparas en la capa que se enciende y charcos de luz en la capa que se suma
 	let lit = null;
 	for ( const w of city.ways ) if ( w.width >= 8 ) { const p = buildOpenChunk( city, chunkOf( w.pts[ 0 ].x ), chunkOf( w.pts[ 0 ].z ) ); if ( p.lamps ) { lit = p; break; } }
-	report( 'Cada farol lleva su lámpara y su charco de luz', lit && lit.glow.indices.length === lit.lamps * 30 && lit.pool.indices.length === lit.lamps * 36, lit && `${ lit.lamps } faroles, ${ lit.glow.indices.length / 3 } triángulos de lámpara, ${ lit.pool.indices.length / 3 } de charco` );
+	report( 'Cada farol lleva su lámpara y su charco de luz', lit && lit.glow.indices.length >= lit.lamps * 30 && lit.pool.indices.length === lit.lamps * 36, lit && `${ lit.lamps } faroles, ${ lit.glow.indices.length / 3 } triángulos de lámpara, ${ lit.pool.indices.length / 3 } de charco` );
+	// mobiliario urbano: en toda la ciudad hay de cada cosa, y cada pieza queda anotada con su posición
+	{
+
+		const tot = { poles: 0, parked: 0, stops: 0, signs: 0, lights: 0, benches: 0, trees: 0, lamps: 0, objects: 0, solid: 0, sign: 0, decor: 0 };
+		const kinds = {};
+		let parkedOnLane = 0, parkedChecked = 0;
+		for ( const [ k ] of index ) {
+
+			const [ ci, cj ] = k.split( ',' ).map( Number ), p = buildOpenChunk( city, ci, cj );
+			for ( const n of [ 'poles', 'parked', 'stops', 'signs', 'lights', 'benches', 'trees', 'lamps' ] ) tot[ n ] += p[ n ];
+			tot.objects += p.objects.length; tot.solid += p.solid.indices.length; tot.sign += p.sign.indices.length; tot.decor += p.decor.indices.length;
+			for ( const o of p.objects ) {
+
+				kinds[ o.kind ] = ( kinds[ o.kind ] || 0 ) + 1;
+				if ( o.kind !== 'estacionado' ) continue;
+				// un auto estacionado queda junto a la solera: su centro a más de medio ancho de calzada menos 0,6 m del eje
+				let best = Infinity, bw = 0;
+				for ( const w of city.ways ) for ( let s = 0; s < w.pts.length - 1; s ++ ) { const a = w.pts[ s ], b = w.pts[ s + 1 ], ex = b.x - a.x, ez = b.z - a.z, l2 = ex * ex + ez * ez || 1, t = Math.max( 0, Math.min( 1, ( ( o.x - a.x ) * ex + ( o.z - a.z ) * ez ) / l2 ) ), d = Math.hypot( o.x - a.x - ex * t, o.z - a.z - ez * t ); if ( d < best ) { best = d; bw = w.width; } }
+				parkedChecked ++;
+				if ( best < bw / 2 - 0.6 ) parkedOnLane ++;
+
+			}
+
+		}
+
+		report( 'Hay mobiliario por toda la ciudad: postes, estacionados, paraderos, señales, semáforos y bancas', tot.poles > 50 && tot.parked > 50 && tot.stops > 3 && tot.signs > 10 && tot.lights > 5 && tot.benches > 10, JSON.stringify( tot ) );
+		report( 'Cada pieza queda anotada con su tipo y posición (más los árboles y faroles)', tot.objects === tot.poles + tot.parked + tot.stops + tot.signs + tot.lights + tot.benches + tot.trees + tot.lamps + ( kinds.basurero || 0 ), Object.entries( kinds ).map( ( [ k, v ] ) => `${ k } ${ v }` ).join( ', ' ) );
+		report( 'Lo sólido, las placas y la decoración van en capas aparte, con contenido', tot.solid > 0 && tot.sign > 0 && tot.decor > 0 && RAY_LAYERS.includes( 'solid' ) && ! RAY_LAYERS.includes( 'decor' ) );
+		report( 'Ningún auto estacionado invade la calzada', parkedChecked > 50 && parkedOnLane === 0, `${ parkedOnLane } de ${ parkedChecked }` );
+		const majors = city.crossings.filter( c => new Set( c.approaches.filter( a => a.width >= 8 ).map( a => a.wi ) ).size >= 2 ).length;
+		const mixed = city.crossings.filter( c => c.approaches.some( a => a.width >= 8 ) && c.approaches.some( a => a.width < 8 ) ).length;
+		report( 'Los cruces se reconocen: entre vías principales (semáforos) y de una menor a una principal (Pare)', city.crossings.length > 30 && majors > 5 && mixed > 5 && city.crossings.every( c => c.ways.length >= 2 && c.approaches.length >= 3 ), `${ city.crossings.length } cruces, ${ majors } principal con principal, ${ mixed } menor con principal` );
+		// un cruce de dos calles de un sentido como una T: tres aproximaciones; una X: cuatro
+		const tees = city.crossings.filter( c => c.approaches.length === 3 ).length, exes = city.crossings.filter( c => c.approaches.length === 4 ).length;
+		report( 'Hay cruces en T y en X', tees > 0 && exes > 0, `${ tees } en T, ${ exes } en X` );
+
+	}
+
 	const hills = hillRing( 1000, 1500, 60 );
 	report( 'Los cerros del horizonte son un anillo cerrado con alturas variadas', hills.positions.length === 60 * 3 * 3 && hills.indices.length === 60 * 2 * 6 && Math.max( ...[ ...hills.positions ].filter( ( v, i ) => i % 3 === 1 ) ) > 100 );
 	// coordenadas de textura de la calzada: u cruza la franja (0 o 1) y v avanza en metros / TEXTURE_METERS

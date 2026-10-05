@@ -83,12 +83,13 @@ Todo lo que viste el mapa abierto sale de datos abiertos o se genera en el momen
 
 - **Texturas.** La calzada, la vereda, el pasto y las fachadas llevan texturas de grano dibujadas en un lienzo al abrir el juego: asfalto con piedras claras, veredas de baldosas, pasto moteado y fachadas con una ventana por celda de 4 m por piso. Son texturas de luminancia que el color de cada vértice tiñe. Las de las calles se repiten cada 6 m a lo largo, con coordenadas acumuladas tramo a tramo para que no se corten en las esquinas; las de las paredes cuentan celdas enteras por pared, así ninguna ventana queda partida. La línea central va discontinua, con una textura de transparencia.
 - **Plazas, parques y agua.** La misma consulta que trae los edificios pide las áreas verdes (`leisure`, `landuse`, `natural`) y el agua (`natural=water`, riberas). Se dibujan como manchas sobre el suelo. Los bosques y parques reciben árboles repartidos por adentro, más densos en los bosques.
-- **Árboles y faroles.** Los árboles que OpenStreetMap tiene mapeados uno por uno (`natural=tree`) aparecen donde están. Además, las calles de 7 m o más reciben árboles de vereda cada 16 m, con huecos al azar, y las vías de 8 m o más (terciarias y mayores) faroles cada 34 m alternando de lado. Ninguno se planta sobre un edificio, sobre el agua ni en un cruce. Los árboles y faroles son decorativos: el camión los atraviesa, para que una vereda angosta no deje atascado el reparto.
+- **Árboles y faroles.** Los árboles que OpenStreetMap tiene mapeados uno por uno (`natural=tree`) aparecen donde están. Además, las calles de 7 m o más reciben árboles de vereda cada 16 m, con huecos al azar, y las vías de 8 m o más (terciarias y mayores) faroles cada 34 m alternando de lado. Ninguno se planta sobre un edificio, sobre el agua ni en un cruce. El tronco y el poste chocan; la copa y el brazo del farol no.
+- **Mobiliario urbano.** Las calles menores llevan postes de luz cada 28 m, alternando de lado. Las vías principales (terciarias y mayores) llevan autos estacionados junto a la solera con dos ruedas sobre la vereda, en el sentido de su lado y con huecos al azar; paraderos abiertos hacia la calle con su señal; y señales de velocidad máxima, una por sentido. En los cruces, dos vías principales reciben semáforos en las esquinas, y una calle menor que llega a una principal recibe un disco Pare. Las plazas tienen bancas y un basurero. Nada se planta encima de otra cosa, en un cruce, sobre un edificio ni sobre el agua. Las placas de las señales salen de un atlas dibujado al vuelo (Pare, 50, paradero y no estacionar).
 - **Cerros.** Una línea de lomas brumosas rodea la ciudad en el horizonte, a la distancia que la calidad elegida alcanza a dibujar. Es decorativa: no sale de ningún modelo de elevación, y por eso no coincide con los cerros reales.
 
 ### Choques
 
-El camión choca con lo que la malla tenga a un metro del suelo. Dos familias de sondas lo cuidan. Las del parachoques y de la cola miran en el sentido de marcha y recortan el avance a la distancia libre. Las de los costados vigilan los flancos de cada unidad, porque en una curva el semirremolque corta la esquina y su costado alcanza lo que el tracto esquivó. Cada punto del flanco lanza un rayo desde donde está hacia donde iría en el paso, y un rayo más recorre cada flanco de punta a punta para atrapar una esquina ajena que entre entre dos puntos. Un movimiento que se aleja del obstáculo nunca se bloquea, así que de un roce siempre se sale en reversa. La velocidad de acercamiento se mide según la normal de la superficie tocada: un roce tangencial detiene el camión sin dañarlo, y un costalazo descuenta como un choque frontal.
+El camión choca con lo que la malla tenga a un metro del suelo: en el mapa abierto, los edificios y todo lo sólido de la calle (troncos, postes, autos estacionados, paraderos, señales, semáforos y bancas), que va en una capa aparte de la decoración que cuelga arriba. Dos familias de sondas lo cuidan. Las del parachoques y de la cola miran en el sentido de marcha y recortan el avance a la distancia libre. Las de los costados vigilan los flancos de cada unidad, porque en una curva el semirremolque corta la esquina y su costado alcanza lo que el tracto esquivó. Cada punto del flanco lanza un rayo desde donde está hacia donde iría en el paso, y un rayo más recorre cada flanco de punta a punta para atrapar una esquina ajena que entre entre dos puntos. Un movimiento que se aleja del obstáculo nunca se bloquea, así que de un roce siempre se sale en reversa. La velocidad de acercamiento se mide según la normal de la superficie tocada: un roce tangencial detiene el camión sin dañarlo, y un costalazo descuenta como un choque frontal.
 
 ### Tráfico
 
@@ -106,8 +107,8 @@ La red vial sale de la misma consulta a OpenStreetMap. Con ella el juego elige d
 
 ```
 npm install
-npm test          # pruebas numéricas, sin navegador (329 comprobaciones)
-npm run e2e       # el juego completo en Chromium sin interfaz, 196 comprobaciones (necesita: npm i -D playwright)
+npm test          # pruebas numéricas, sin navegador (337 comprobaciones)
+npm run e2e       # el juego completo en Chromium sin interfaz, 199 comprobaciones (necesita: npm i -D playwright)
 ```
 
 Las pruebas numéricas cubren el modelo del camión (radios de giro contra la teoría, corredor de giro de la norma europea, aceleración, frenado, pendientes, caja de cambios, bajadas, choques frontales y laterales), la geodesia, la red vial, el mapa abierto (triangulación, prismas, trozos, memoria de edificios) y los encargos. `tests/osm-real.test.mjs` usa una muestra real del centro de Temuco (`tests/fixtures/temuco-centro.json`, © OpenStreetMap contributors, ODbL). El entorno de desarrollo no llega a Overpass, así que no hay una muestra real de edificios: `tests/open-fixture.mjs` reparte plantas sintéticas en las manzanas de esa muestra, con las etiquetas que usa el juego.
@@ -136,9 +137,9 @@ Verificado solo contra simulaciones:
 
 ## Límites conocidos
 
-- Las sondas de choque van a un metro del suelo. Un balcón o un letrero más alto no detiene al camión, y un auto estacionado sí. Los puntos de cada costado van cada 4,5 m: un poste muy delgado puede entrar entre dos sin que la arista lo note hasta que un punto lo alcanza.
+- Las sondas de choque van a un metro del suelo. Un balcón o un letrero más alto no detiene al camión, y un auto estacionado sí. Los puntos de cada costado van cada 4,5 m, con un rayo de punta a punta entre ellos que atrapa los postes delgados.
 - Los espejos solo se dibujan en la vista de cabina.
-- En el mapa abierto el suelo es plano: no hay relieve ni soleras, y los cerros del horizonte son decorativos. Los edificios y las áreas dibujados en OpenStreetMap como relaciones (con patio interior o en varias partes) no aparecen, y los edificios que no declaran altura ni pisos reciben una altura típica de su tipo. Las calles se dibujan con un ancho fijo por clase, sin carriles ni cruces resueltos. Los árboles y faroles no chocan.
+- En el mapa abierto el suelo es plano: no hay relieve ni soleras, y los cerros del horizonte son decorativos. Los edificios y las áreas dibujados en OpenStreetMap como relaciones (con patio interior o en varias partes) no aparecen, y los edificios que no declaran altura ni pisos reciben una altura típica de su tipo. Las calles se dibujan con un ancho fijo por clase, sin carriles ni cruces resueltos. Los semáforos no cambian: uno queda en verde y el otro en rojo.
 - El juego supone tránsito por la derecha.
 - El tráfico es sencillo: no hay semáforos ni prioridad en los cruces (dos vehículos pueden cruzarse en una intersección), no cambian de carril ni adelantan, y no esquivan al camión: si está cruzado en su carril, esperan.
 - La red vial ignora las restricciones de giro de OpenStreetMap (son relaciones, y la consulta trae solo vías).
@@ -165,6 +166,11 @@ Verificado solo contra simulaciones:
 El código de Ruta Sur se publica bajo la licencia MIT (ver `LICENSE`). Las obras incluidas conservan sus propias licencias, listadas arriba.
 
 ## Cambios
+
+**0.10.0**
+
+- Mobiliario urbano en el mapa abierto: postes de luz, autos estacionados, paraderos con su señal, señales de velocidad y de Pare, semáforos en los cruces de vías principales, bancas y basureros en las plazas.
+- Choques con los objetos de la calle: troncos, postes, estacionados, paraderos, señales, semáforos y bancas detienen al camión; las copas y los brazos de los faroles siguen sin chocar.
 
 **0.9.0**
 

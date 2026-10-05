@@ -15,7 +15,7 @@ import { openCity, chunkIndex, buildOpenChunk, groundPlane, hillRing, chunkOf, O
 // numéricas) no hay texturas y las capas quedan de color plano.
 function makeTextures() {
 
-	if ( typeof document === 'undefined' ) return { asphalt: null, sidewalk: null, grass: null, facade: null, windows: null, dash: null };
+	if ( typeof document === 'undefined' ) return { asphalt: null, sidewalk: null, grass: null, facade: null, windows: null, dash: null, signs: null };
 	const hash = ( x, y ) => { const s = Math.sin( x * 12.9898 + y * 78.233 ) * 43758.5453; return s - Math.floor( s ); };
 	// paint devuelve la luminancia (en torno a 1) o [ r, g, b, a ] en el mismo rango
 	const make = ( size, paint, h = size ) => {
@@ -94,7 +94,42 @@ function makeTextures() {
 	if ( windows ) windows.repeat.set( 0.25, 0.25 ); // cuatro celdas por lado
 	// línea central discontinua: tramos de 3 m pintados y 3 m sin pintar, como transparencia
 	const dash = make( 8, ( x, y ) => ( y < 32 ? [ 1, 1, 1, 1 ] : [ 1, 1, 1, 0 ] ), 64 );
-	return { asphalt, sidewalk, grass, facade, windows, dash };
+	return { asphalt, sidewalk, grass, facade, windows, dash, signs: signsAtlas() };
+
+}
+
+// Atlas de señales: cuatro celdas de 64 px (Pare, velocidad máxima, paradero, no estacionar),
+// dibujadas con el lienzo en dos dimensiones; cada placa toma una celda entera
+function signsAtlas() {
+
+	const c = document.createElement( 'canvas' );
+	c.width = 256; c.height = 64;
+	const g = c.getContext( '2d' );
+	if ( ! g ) return null;
+	g.clearRect( 0, 0, 256, 64 );
+	const text = ( s, x, size, color = '#fff' ) => { g.fillStyle = color; g.font = `bold ${ size }px Arial, sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText( s, x, 33 ); };
+	// Pare: octágono rojo con borde blanco
+	g.fillStyle = '#b3251b'; g.beginPath();
+	for ( let k = 0; k < 8; k ++ ) { const th = Math.PI / 8 + k * Math.PI / 4; g.lineTo( 32 + 30 * Math.cos( th ), 32 + 30 * Math.sin( th ) ); }
+	g.closePath(); g.fill(); g.lineWidth = 3; g.strokeStyle = '#fff'; g.stroke();
+	text( 'PARE', 32, 15 );
+	// velocidad máxima: disco blanco con anillo rojo
+	g.fillStyle = '#fff'; g.beginPath(); g.arc( 96, 32, 30, 0, 7 ); g.fill();
+	g.lineWidth = 6; g.strokeStyle = '#b3251b'; g.beginPath(); g.arc( 96, 32, 27, 0, 7 ); g.stroke();
+	text( '50', 96, 26, '#111' );
+	// paradero: placa azul con un bus
+	g.fillStyle = '#1d4e89'; g.fillRect( 164, 4, 56, 56 );
+	g.fillStyle = '#fff'; g.fillRect( 176, 24, 32, 16 ); g.fillRect( 178, 18, 28, 7 );
+	g.fillStyle = '#1d4e89'; g.fillRect( 180, 26, 8, 6 ); g.fillRect( 196, 26, 8, 6 );
+	g.fillStyle = '#fff'; g.beginPath(); g.arc( 182, 42, 3, 0, 7 ); g.arc( 202, 42, 3, 0, 7 ); g.fill();
+	// no estacionar: disco azul, anillo y barra rojos
+	g.fillStyle = '#1d4e89'; g.beginPath(); g.arc( 224, 32, 30, 0, 7 ); g.fill();
+	g.lineWidth = 6; g.strokeStyle = '#b3251b'; g.beginPath(); g.arc( 224, 32, 27, 0, 7 ); g.stroke();
+	g.beginPath(); g.moveTo( 205, 13 ); g.lineTo( 243, 51 ); g.stroke();
+	const t = new THREE.CanvasTexture( c );
+	t.colorSpace = THREE.SRGBColorSpace;
+	t.anisotropy = 4;
+	return t;
 
 }
 
@@ -117,7 +152,9 @@ export class OpenWorld {
 		const layer = ( k, map = null, extra = {} ) => new THREE.MeshBasicMaterial( { vertexColors: true, map, polygonOffset: k !== 0, polygonOffsetFactor: - k, polygonOffsetUnits: - 2 * k, ...extra } );
 		const T = this.textures = makeTextures();
 		this.materials = {
-			ground: layer( 0, T.grass ), buildings: layer( 0, T.facade ), decor: layer( 0 ),
+			ground: layer( 0, T.grass ), buildings: layer( 0, T.facade ), decor: layer( 0 ), solid: layer( 0 ),
+			// placas de las señales: la textura del atlas, transparente fuera de la placa
+			sign: layer( 0, T.signs, T.signs ? { transparent: true, alphaTest: 0.5, side: THREE.DoubleSide } : {} ),
 			park: layer( 1, T.grass ), walk: layer( 2, T.sidewalk ), road: layer( 3, T.asphalt ),
 			line: layer( 4, null, T.dash ? { alphaMap: T.dash, alphaTest: 0.5 } : {} ),
 			// luces de las ventanas: se suman a la fachada; de día no se dibujan
@@ -141,6 +178,7 @@ export class OpenWorld {
 		this.roadsData = null; this.buildingsData = null;
 		this.roadsError = null; this.buildingsError = null;
 		this.built = 0; this.buildMs = 0; this.trees = 0; this.lamps = 0;
+		this.furniture = { postes: 0, estacionados: 0, paraderos: 0, senales: 0, semaforos: 0, bancas: 0 };
 		this.pending = 0;          // trozos por construir dentro del radio de carga
 		this.pendingNear = 0;      // trozos por construir dentro del radio que la carga espera
 		this.loadT = 0;
@@ -262,7 +300,8 @@ export class OpenWorld {
 			}
 
 			this.trees += parts.trees; this.lamps += parts.lamps;
-			this.chunks.set( `${ c.i },${ c.j }`, { rays, meshes, i: c.i, j: c.j, cx: ( c.i + 0.5 ) * size, cz: ( c.j + 0.5 ) * size } );
+			const F = this.furniture; F.postes += parts.poles; F.estacionados += parts.parked; F.paraderos += parts.stops; F.senales += parts.signs; F.semaforos += parts.lights; F.bancas += parts.benches;
+			this.chunks.set( `${ c.i },${ c.j }`, { rays, meshes, objects: parts.objects, i: c.i, j: c.j, cx: ( c.i + 0.5 ) * size, cz: ( c.j + 0.5 ) * size } );
 			this.built ++;
 			this.pending --;
 			if ( c.d < OPEN.readyRadius ) this.pendingNear --;
@@ -315,7 +354,7 @@ export class OpenWorld {
 	setLight( { tint, lamps = 0, level = 1 } ) {
 
 		const M = this.materials;
-		for ( const name of [ 'ground', 'buildings', 'park', 'walk', 'road', 'line', 'decor', 'plane', 'hills' ] ) M[ name ].color.setRGB( tint[ 0 ], tint[ 1 ], tint[ 2 ] );
+		for ( const name of [ 'ground', 'buildings', 'park', 'walk', 'road', 'line', 'decor', 'solid', 'sign', 'plane', 'hills' ] ) M[ name ].color.setRGB( tint[ 0 ], tint[ 1 ], tint[ 2 ] );
 		this.lampsOn = lamps > 0;
 		M.glow.color.setRGB( 0.75 + 0.25 * lamps, 0.75 + 0.17 * lamps, 0.72 - 0.02 * lamps );
 		M.pool.visible = M.windows.visible = this.lampsOn;
@@ -347,7 +386,7 @@ export class OpenWorld {
 		return { visibles: this.chunks.size, activas: this.chunks.size, descargando: this.pending, fallidas: this.buildingsError ? 1 : 0, rechazadas: 0, cacheMB: 0,
 			cercanas: this.field.meshes.length, rayos: this.field.rays, bvh: this.field.builds, bvhMs: this.field.buildMs,
 			edificios: this.city ? this.city.buildings.length : 0, vias: this.city ? this.city.ways.length : 0,
-			manchas: this.city ? this.city.greens.length : 0, arbolesOSM: this.city ? this.city.trees.length : 0, arboles: this.trees, faroles: this.lamps };
+			manchas: this.city ? this.city.greens.length : 0, arbolesOSM: this.city ? this.city.trees.length : 0, arboles: this.trees, faroles: this.lamps, cruces: this.city ? this.city.crossings.length : 0, ...this.furniture };
 
 	}
 

@@ -47,6 +47,7 @@ R.check( 'Hay red vial y un encargo ofrecido', s.graph > 50 && s.jobs && s.jobs.
 const st = await page.evaluate( () => { const w = window.__rutaSur.world; return { ...w.stats(), kind: w.kind, provider: w.provider, credit: document.getElementById( 'a-logo' ).textContent }; } );
 R.check( 'La ciudad trae los edificios y las vías de OpenStreetMap', st.kind === 'open' && st.edificios > 100 && st.vias > 40, `${ st.edificios } edificios, ${ st.vias } vías, ${ st.visibles } trozos` );
 R.check( 'Y la ambientación: plazas, árboles mapeados y de vereda, faroles', st.manchas > 10 && st.arbolesOSM > 10 && st.arboles > 50 && st.faroles > 0, `${ st.manchas } manchas, ${ st.arbolesOSM } árboles mapeados, ${ st.arboles } árboles dibujados, ${ st.faroles } faroles` );
+R.check( 'Y el mobiliario urbano: postes, autos estacionados, paraderos, señales, semáforos y bancas', st.postes > 5 && st.estacionados > 10 && st.paraderos > 0 && st.senales > 2 && st.semaforos > 0 && st.bancas > 0 && st.cruces > 10, `${ st.postes } postes, ${ st.estacionados } estacionados, ${ st.paraderos } paraderos, ${ st.senales } señales, ${ st.semaforos } semáforos, ${ st.bancas } bancas, ${ st.cruces } cruces` );
 R.check( 'La atribución nombra a OpenStreetMap', /OpenStreetMap/.test( st.provider ) && /OpenStreetMap/.test( st.credit ), st.credit );
 await sleep( page, 2500 );
 await page.screenshot( { path: `${ SHOTS }/abierto-01-cabina.png` } );
@@ -152,6 +153,48 @@ if ( crash.found ) {
 await page.keyboard.press( 'KeyC' );
 await sleep( page, 2500 );
 await page.screenshot( { path: `${ SHOTS }/abierto-04-choque.png` } );
+
+// --- lo sólido de la calle también detiene al camión: se embiste un auto estacionado por detrás
+const solid = await page.evaluate( () => {
+
+	const g = window.__rutaSur, t = g.truck, W = g.world;
+	let car = null, bd = Infinity;
+	for ( const c of W.chunks.values() ) for ( const o of c.objects || [] ) { if ( o.kind !== 'estacionado' ) continue; const d = Math.hypot( o.x - t.x, o.z - t.z ); if ( d < bd ) { bd = d; car = o; } }
+	if ( ! car ) return { found: false };
+	// el camión 16 m detrás del auto, en su mismo sentido, y avanza despacio hasta tocarlo
+	const fx = - Math.sin( car.yaw ), fz = - Math.cos( car.yaw );
+	const compass = ( Math.PI - car.yaw ) * 180 / Math.PI;
+	if ( ! g.teleport( car.x - fx * 16, car.z - fz * 16, compass ) ) return { found: true, placed: false };
+	g.lastImpact = 0; g.ghost = false;
+	const damage0 = t.damage;
+	let time = 0;
+	while ( time < 12 && t.blocked <= 0 && g.lastImpact === 0 ) { g.advance( 0.2, { accel: 0.45 } ); time += 0.2; }
+	g.advance( 1.5, { accel: 0.45 } ); // insistir no lo atraviesa
+	const front = t.spec.tractor.wheelbase + t.spec.tractor.frontOverhang;
+	const px = t.x - Math.sin( t.yaw ) * front, pz = t.z - Math.cos( t.yaw ) * front;
+	const ahead = ( car.x - px ) * fx + ( car.z - pz ) * fz; // del parachoques al centro del auto, en el sentido de marcha
+	return { found: true, placed: true, time, blocked: t.blocked, impact: g.lastImpact, ahead, v: t.v, damage: t.damage - damage0 };
+
+} );
+R.check( 'Hay un auto estacionado cerca y el camión se deja detrás', solid.found && solid.placed );
+if ( solid.found && solid.placed ) {
+
+R.check( 'El auto estacionado detiene al camión: no lo atraviesa', ( solid.blocked > 0 || solid.impact > 0 ) && solid.ahead > 1.6 && solid.ahead < 4.5 && Math.abs( solid.v ) < 0.3, `tras ${ solid.time.toFixed( 1 ) } s, el parachoques queda a ${ solid.ahead.toFixed( 2 ) } m del centro del auto, impacto ${ ( solid.impact * 3.6 ).toFixed( 1 ) } km/h, daño ${ ( solid.damage * 100 ).toFixed( 1 ) } %` );
+
+}
+
+// una foto de un cruce con semáforo, desde la cámara exterior
+const corner = await page.evaluate( () => {
+
+	const g = window.__rutaSur, t = g.truck, W = g.world;
+	let best = null, bd = Infinity;
+	for ( const c of W.chunks.values() ) for ( const o of c.objects || [] ) { if ( o.kind !== 'semaforo' ) continue; const d = Math.hypot( o.x - t.x, o.z - t.z ); if ( d < bd ) { bd = d; best = o; } }
+	if ( ! best ) return false;
+	const dx = best.x - t.x, dz = best.z - t.z, d = Math.hypot( dx, dz ) || 1, yaw = Math.atan2( - dx, - dz );
+	return g.teleport( best.x - dx / d * 18, best.z - dz / d * 18, ( Math.PI - yaw ) * 180 / Math.PI );
+
+} );
+if ( corner ) { await page.keyboard.press( 'KeyC' ); await sleep( page, 2500 ); await page.screenshot( { path: `${ SHOTS }/abierto-10-semaforo.png` } ); await page.keyboard.press( 'KeyC' ); await page.keyboard.press( 'KeyC' ); await sleep( page, 300 ); }
 
 // --- día y noche: la hora avanza con el juego, T la adelanta y de noche se encienden las luces
 await page.evaluate( () => { window.__rutaSur.hour = 17.3; } ); await sleep( page, 300 ); // la hora de partida, descontado lo que el piloto y el tráfico avanzaron
