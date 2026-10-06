@@ -416,6 +416,7 @@ export function buildOpenChunk( city, i, j ) {
 	const entry = ( city.index || chunkIndex( city, size ) ).get( key( i, j ) ) || { segments: [], buildings: [], greens: [], trees: [], crossings: [] };
 	const objects = [];                 // { kind, x, z } de cada pieza puesta, para las pruebas y el minimapa
 	const counts = { poles: 0, parked: 0, stops: 0, signs: 0, lights: 0, benches: 0 };
+	const signalLamps = [];             // { key, group, lamp, v0, v1 }: lámparas de semáforo en la capa glow, por cruce y grupo
 	const within = ( x, z ) => x >= x0 && x < x1 && z >= z0 && z < z1;
 
 	// suelo: una grilla chica con un leve moteado y la textura de pasto en metros del mundo
@@ -624,7 +625,9 @@ export function buildOpenChunk( city, i, j ) {
 		const widest = Math.max( ...c.approaches.map( a => a.width ) );
 		if ( majorWays.size >= 2 ) {
 
-			const first = majors[ 0 ].wi;
+			// la vía principal de id menor forma el grupo 0 (parte en verde); las demás, el 1 (mismo convenio que signals.js)
+			const majorIds = [ ...majorWays ].map( wi => city.ways[ wi ].id ).sort( ( p, q ) => p - q );
+			const ckey = `${ Math.round( c.x * 5 ) },${ Math.round( c.z * 5 ) }`;
 			for ( const a of majors ) {
 
 				// esquina derecha de quien llega por esta aproximación (viene en el sentido -u)
@@ -632,8 +635,9 @@ export function buildOpenChunk( city, i, j ) {
 				const x = c.x + a.ux * ( other / 2 + SIDEWALK + 0.4 ) + a.uz * ( a.width / 2 + 0.5 );
 				const z = c.z + a.uz * ( other / 2 + SIDEWALK + 0.4 ) - a.ux * ( a.width / 2 + 0.5 );
 				if ( ! within( x, z ) || ! free( x, z ) ) continue;
-				trafficLight( solid, decor, glow, x, z, Math.atan2( a.ux, a.uz ), a.wi === first ? 'green' : 'red' );
-				counts.lights ++; objects.push( { kind: 'semaforo', x, z } );
+				const group = city.ways[ a.wi ].id === majorIds[ 0 ] ? 0 : 1;
+				for ( const l of trafficLight( solid, decor, glow, x, z, Math.atan2( a.ux, a.uz ), group === 0 ? 'green' : 'red' ) ) signalLamps.push( { key: ckey, group, ...l } );
+				counts.lights ++; objects.push( { kind: 'semaforo', x, z, group } );
 
 			}
 
@@ -653,7 +657,7 @@ export function buildOpenChunk( city, i, j ) {
 
 	}
 
-	return { ground: mb.finish(), buildings: bld.finish(), park: park.finish(), walk: walk.finish(), road: road.finish(), line: line.finish(), decor: decor.finish(), glow: glow.finish(), pool: pool.finish(), solid: solid.finish(), sign: sign.finish(), trees: count, lamps: lampsOf.length, objects, ...counts };
+	return { ground: mb.finish(), buildings: bld.finish(), park: park.finish(), walk: walk.finish(), road: road.finish(), line: line.finish(), decor: decor.finish(), glow: glow.finish(), pool: pool.finish(), solid: solid.finish(), sign: sign.finish(), trees: count, lamps: lampsOf.length, objects, signalLamps, ...counts };
 
 }
 

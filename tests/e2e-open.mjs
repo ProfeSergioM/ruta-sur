@@ -196,6 +196,53 @@ const corner = await page.evaluate( () => {
 } );
 if ( corner ) { await page.keyboard.press( 'KeyC' ); await sleep( page, 2500 ); await page.screenshot( { path: `${ SHOTS }/abierto-10-semaforo.png` } ); await page.keyboard.press( 'KeyC' ); await page.keyboard.press( 'KeyC' ); await sleep( page, 300 ); }
 
+// --- semáforos: ciclan, el tráfico los respeta y el camión paga multa si pasa en rojo
+const sig = await page.evaluate( () => {
+
+	const g = window.__rutaSur, S = g.signals, W = g.world;
+	if ( ! S ) return { signals: false };
+	// lámparas pintadas en algún trozo cargado, y que cambian con el reloj
+	const lamps = () => { const out = []; for ( const c of W.chunks.values() ) if ( c.lamps ) for ( const l of c.lamps.list ) out.push( l.key + ':' + l.group + ':' + l.lamp + ':' + ( l.lit ? 1 : 0 ) ); return out; };
+	g.advance( 0.5, {} );
+	const a = lamps();
+	g.advance( 20, {} ); // sin entrada: detenido (frenar detenido engancharía la reversa)
+	const b = lamps();
+	let changed = 0; for ( let i = 0; i < a.length; i ++ ) if ( a[ i ] !== b[ i ] ) changed ++;
+	const litNow = b.filter( s => s.endsWith( ':1' ) ).length;
+	return { signals: true, lights: S.lights, stops: S.stops, lamps: a.length, changed, litNow };
+
+} );
+R.check( 'El mapa abierto tiene semáforos y discos Pare en sus cruces', sig.signals && sig.lights > 0 && sig.stops > 0, JSON.stringify( sig ) );
+R.check( 'Las lámparas de los semáforos cargados se pintan y cambian con el ciclo', sig.lamps > 0 && sig.litNow > 0 && sig.changed > 0, `${ sig.lamps } lámparas, ${ sig.litNow } encendidas, ${ sig.changed } cambiaron en 20 s` );
+const redLight = await page.evaluate( () => {
+
+	const g = window.__rutaSur, S = g.signals, G = g.graph, t = g.truck;
+	// un semáforo y una arista de una vía principal que entra a él: el camión parte 28 m antes
+	let pick = null;
+	for ( const [ n, cr ] of S.byNode ) {
+
+		if ( cr.kind !== 'light' ) continue;
+		for ( let e = 0; e < G.from.length; e ++ ) if ( G.to[ e ] === n && G.len[ e ] > 30 && cr.majorIds.includes( G.ways[ G.wayOf[ e ] ].id ) ) { pick = { cr, e, wayId: G.ways[ G.wayOf[ e ] ].id }; break; }
+		if ( pick ) break;
+
+	}
+
+	if ( ! pick ) return { found: false };
+	const { cr, e, wayId } = pick, ux = G.ux[ e ], uz = G.uz[ e ], yaw = Math.atan2( - ux, - uz );
+	if ( ! g.teleport( cr.x - ux * 26, cr.z - uz * 26, ( Math.PI - yaw ) * 180 / Math.PI ) ) return { found: true, placed: false };
+	if ( g.traffic ) g.traffic.clearNear( cr.x, cr.z, 80 );
+	// espera detenido hasta que la luz esté en rojo con tiempo por delante
+	let waited = 0;
+	while ( waited < 60 && ! ( S.state( cr, wayId, g.simTime ) === 'red' && S.state( cr, wayId, g.simTime + 8 ) === 'red' ) ) { g.advance( 0.5, {} ); waited += 0.5; }
+	const before = g.redLights || 0, total0 = g.jobs.total;
+	g.advance( 7, { accel: 1 } );
+	const toast = document.getElementById( 'aviso' );
+	return { found: true, placed: true, waited, fines: ( g.redLights || 0 ) - before, toast: toast && ! toast.hidden ? toast.textContent : '', fine: total0 - g.jobs.total, passed: ( cr.x - t.x ) * ( - Math.sin( yaw ) ) + ( cr.z - t.z ) * ( - Math.cos( yaw ) ) };
+
+} );
+R.check( 'Hay un semáforo con una avenida que entra, y el camión se deja antes de la línea', redLight.found && redLight.placed );
+if ( redLight.found && redLight.placed ) R.check( 'Pasar con luz roja cuesta una multa, una sola vez', redLight.fines === 1 && /luz roja/.test( redLight.toast ) && redLight.passed < 0, `${ redLight.toast || 'sin aviso' }; esperó ${ redLight.waited } s el rojo; cruce ${ ( - redLight.passed ).toFixed( 0 ) } m atrás` );
+
 // --- día y noche: la hora avanza con el juego, T la adelanta y de noche se encienden las luces
 await page.evaluate( () => { window.__rutaSur.hour = 17.3; } ); await sleep( page, 300 ); // la hora de partida, descontado lo que el piloto y el tráfico avanzaron
 const day = await page.evaluate( () => { const g = window.__rutaSur, M = g.world.materials; return { hour: g.hour, clock: document.getElementById( 'reloj' ).textContent, lamps: g.world.lampsOn, pool: M.pool.visible, tint: M.road.color.r, windows: M.windows.visible }; } );

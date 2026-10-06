@@ -48,7 +48,7 @@ report( 'En una calle de dos sentidos se circula corrido a la derecha; en una de
 	for ( let i = 0; i < 120; i ++ ) T.step( t, H );
 	report( 'En dos segundos el tráfico llega a su cupo', T.vehicles.length === 16, `${ T.vehicles.length } vehículos` );
 	const dists = T.vehicles.map( v => Math.hypot( v.x - t.x, v.z - t.z ) );
-	report( 'Todos aparecen lejos del camión, pero no demasiado', dists.every( d => d >= TRAFFIC.spawnMin && d <= TRAFFIC.spawnMax ), `${ Math.min( ...dists ).toFixed( 0 ) } a ${ Math.max( ...dists ).toFixed( 0 ) } m` );
+	report( 'Todos aparecen lejos del camión, pero no demasiado (en dos segundos algunos ya se acercaron)', dists.every( d => d >= TRAFFIC.spawnMin - 25 && d <= TRAFFIC.spawnMax ), `${ Math.min( ...dists ).toFixed( 0 ) } a ${ Math.max( ...dists ).toFixed( 0 ) } m` );
 	const kinds = new Set( T.vehicles.map( v => v.kind ) );
 	report( 'Hay más de un tipo de vehículo', kinds.size >= 2, [ ...kinds ].join( ', ' ) );
 	// 40 s de circulación

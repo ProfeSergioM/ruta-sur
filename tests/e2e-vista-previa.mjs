@@ -130,7 +130,9 @@ if ( run( 'estricta' ) ) {
 	await frame.click( '#salir' );
 	await frame.click( '#conducir' );
 	let text = '';
-	for ( let i = 0; i < 120; i ++ ) { text = await game( frame, () => document.getElementById( 'carga' ).dataset.estado === 'error' ? document.getElementById( 'carga-texto' ).textContent : '' ); if ( text ) break; await sleep( page, 250 ); }
+	// el aviso del bloqueo llega un instante después de que falla el pedido: si el primer texto es
+	// el genérico, se espera un momento a que el juego vuelva a explicar con la causa
+	for ( let i = 0; i < 120; i ++ ) { text = await game( frame, () => document.getElementById( 'carga' ).dataset.estado === 'error' ? document.getElementById( 'carga-texto' ).textContent : '' ); if ( /bloquea/.test( text ) || ( text && i > 12 ) ) break; await sleep( page, 250 ); }
 	const title = await game( frame, () => document.getElementById( 'carga-titulo' ).textContent );
 	R.check( 'Al pedir el mapa abierto, el juego explica que la vista bloquea la conexión y cómo abrirlo', /bloquea la conexión con OpenStreetMap/.test( text ) && /ábrelo con doble clic en Chrome o Edge/.test( text ) && /Ruta cortada/i.test( title ), text );
 	await page.screenshot( { path: `${ SHOTS }/vista-previa-03-mapa-bloqueado.png` } );
@@ -261,7 +263,9 @@ if ( run( 'abierta' ) ) {
 	await page.route( /https:\/\/overpass[^/]*\/api\/interpreter.*/, r => { asked ++; r.fulfill( { status: 504, body: 'timeout', headers: { 'access-control-allow-origin': '*' } } ); } );
 	await frame.click( '#conducir' );
 	let text = '';
-	for ( let i = 0; i < 120; i ++ ) { text = await game( frame, () => document.getElementById( 'carga' ).dataset.estado === 'error' ? document.getElementById( 'carga-texto' ).textContent : '' ); if ( text ) break; await sleep( page, 250 ); }
+	// el aviso del bloqueo llega un instante después de que falla el pedido: si el primer texto es
+	// el genérico, se espera un momento a que el juego vuelva a explicar con la causa
+	for ( let i = 0; i < 120; i ++ ) { text = await game( frame, () => document.getElementById( 'carga' ).dataset.estado === 'error' ? document.getElementById( 'carga-texto' ).textContent : '' ); if ( /bloquea/.test( text ) || ( text && i > 12 ) ) break; await sleep( page, 250 ); }
 	R.check( 'Sin política que lo impida, el pedido llega al servicio y su respuesta se explica', asked >= 1 && /504/.test( text ) && ! /bloquea/.test( text ), `${ asked } pedidos: ${ text }` );
 	await browser.close();
 

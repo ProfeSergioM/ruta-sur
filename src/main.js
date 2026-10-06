@@ -12,6 +12,7 @@ import { Input } from './input.js';
 import { Sound } from './audio.js';
 import { Mirrors } from './mirrors.js';
 import { Traffic, TrafficView } from './traffic.js';
+import { Signals, RED_LIGHT_FINE } from './signals.js';
 import { Radio } from './radio.js';
 import { daylight, clockText, wrapHour, DAY_SECONDS_PER_HOUR } from './daylight.js';
 import { compassFromYaw, compassName } from './geo.js';
@@ -157,6 +158,7 @@ const game = {
 	ghost: false, debug: false,
 	mirrors: null, mirrorInsets: true,   // espejos retrovisores y sus recuadros en pantalla
 	traffic: null, trafficView: null, trafficOn: true, lastCarHit: - 9,   // los demás vehículos
+	signals: null,                       // semáforos y discos Pare (solo en el mapa abierto, donde se ven)
 	hour: 17,                            // hora del juego (0 a 24); el ciclo de luz sale de aquí
 	cam: { mode: 0, lookYaw: 0, lookPitch: 0, orbit: 0, lift: 0, yaw: 0, init: false },
 	load: null,
@@ -553,7 +555,10 @@ function startTraffic() {
 
 	if ( game.traffic || ! game.graph || ! game.truck ) return;
 	const world = game.world;
-	game.traffic = new Traffic( { graph: game.graph, rng: seededRandom(), count: game.trafficOn ? game.quality.traffic : 0, groundAt: ( x, z ) => { const g = world.groundAt( x, z ); return g ? g.y : null; } } );
+	// los semáforos solo donde se dibujan: en el mapa abierto
+	game.signals = world.kind === 'open' ? new Signals( game.graph ) : null;
+	world.signals = game.signals;
+	game.traffic = new Traffic( { graph: game.graph, rng: seededRandom(), count: game.trafficOn ? game.quality.traffic : 0, groundAt: ( x, z ) => { const g = world.groundAt( x, z ); return g ? g.y : null; }, signals: game.signals } );
 	game.traffic.enabled = game.trafficOn;
 	game.trafficView = new TrafficView( scene, game.traffic );
 	if ( _lastDaylight ) game.trafficView.setNight( _lastDaylight.lamps );
@@ -580,7 +585,7 @@ function teardown() {
 	input.enabled = false;
 	if ( game.mirrors ) { game.mirrors.dispose(); game.mirrors = null; }
 	if ( game.trafficView ) { game.trafficView.dispose(); game.trafficView = null; }
-	game.traffic = null;
+	game.traffic = null; game.signals = null;
 	if ( game.model ) { scene.remove( game.model.root ); game.model.dispose(); game.model = null; }
 	if ( game.world ) { game.world.dispose(); game.world = null; }
 	game.truck = null; game.jobs = null; game.graph = null; game.load = null;
@@ -835,6 +840,14 @@ function physicsStep( inp ) {
 
 	}
 
+	if ( game.signals && game.signals.watch( t, game.simTime ) === 'red' ) {
+
+		if ( game.jobs ) game.jobs.fine( RED_LIGHT_FINE );
+		hud.toast( `Pasaste con luz roja: multa ${ fmtPesos( RED_LIGHT_FINE ) }`, 'alerta', 3.5 );
+		game.redLights = ( game.redLights || 0 ) + 1;
+
+	}
+
 	if ( game.traffic ) {
 
 		const tv = game.traffic.step( t, H, ! game.ghost );
@@ -886,7 +899,7 @@ game.advance = ( seconds, inp = {} ) => {
 	for ( let i = 0; i < n; i ++ ) {
 
 		physicsStep( typeof inp === 'function' ? inp( game.simTime, t ) : inp );
-		if ( i % 12 === 0 ) { _focus.set( t.x, t.y, t.z ); game.world.update( _focus, 12 * H, true ); }
+		if ( i % 12 === 0 ) { _focus.set( t.x, t.y, t.z ); game.world.signalTime = game.simTime; game.world.update( _focus, 12 * H, true ); }
 		if ( game.jobs ) game.jobs.update( t, H );
 
 	}
@@ -917,6 +930,7 @@ function drivingStep( dt ) {
 	applyDaylight();
 	updateCamera( dt, inp.look );
 	_focus.set( t.x, t.y, t.z );
+	world.signalTime = game.simTime;
 	world.update( _focus, dt, true );
 	sound.update( t, dt );
 

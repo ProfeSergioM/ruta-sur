@@ -107,13 +107,23 @@ export function roadSign( solid, sign, x, z, yaw, cell, size = 0.75, h = 2.2 ) {
 
 }
 
-// Semáforo: poste con cabezal de tres lámparas, con la que está encendida según `lit` ('red' | 'green')
+// Semáforo: poste con cabezal de tres lámparas, con la que está encendida según `lit` ('red' | 'green').
+// Devuelve el rango de vértices de cada lámpara en `glow`, para encenderlas y apagarlas después.
+export const LAMP_COLORS = { red: F.red, amber: F.amber, green: F.green, off: F.off };
 export function trafficLight( solid, decor, glow, x, z, yaw, lit = 'red' ) {
 
 	const H = 3.6;
 	boxAt( solid, x, z, yaw, 0.14, 0.14, 0, H, F.steel, 0.7 );
 	boxAt( decor, x, z, yaw, 0.3, 0.3, H - 1.05, H + 0.05, F.dark, 0.6, - 0.12 );
-	const lamps = [ [ 'red', F.red, H - 0.2 ], [ 'amber', F.amber, H - 0.5 ], [ 'green', F.green, H - 0.8 ] ];
-	for ( const [ name, col, y ] of lamps ) boxAt( glow, x, z, yaw, 0.22, 0.08, y - 0.1, y + 0.1, name === lit ? col : F.off, 1, - 0.12, - 0.19 );
+	const lamps = [ [ 'red', H - 0.2 ], [ 'amber', H - 0.5 ], [ 'green', H - 0.8 ] ], out = [];
+	for ( const [ name, y ] of lamps ) {
+
+		const v0 = glow.count;
+		boxAt( glow, x, z, yaw, 0.22, 0.08, y - 0.1, y + 0.1, name === lit ? LAMP_COLORS[ name ] : F.off, 1, - 0.12, - 0.19 );
+		out.push( { lamp: name, v0, v1: glow.count } );
+
+	}
+
+	return out;
 
 }

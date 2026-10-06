@@ -79,6 +79,7 @@ export const state = page => page.evaluate( () => {
 		perf: g.perf, cam: g.cam.mode,
 		stats: g.world ? g.world.stats() : null,
 		ghost: g.ghost,
+		signals: g.signals ? { lights: g.signals.lights, stops: g.signals.stops } : null, redLights: g.redLights || 0,
 		traffic: g.traffic ? { n: g.traffic.vehicles.length, hits: g.traffic.hits, braking: g.traffic.braking, enabled: g.traffic.enabled, stunned: g.traffic.vehicles.filter( v => v.stun > 0 ).length } : null,
 	};
 

@@ -9,6 +9,7 @@ import * as THREE from 'three';
 import { Geo } from './geo.js';
 import { RayField, makeTerrain, longRay, nearRay, fetchRoads, fetchBuildings, viewBlocks, blockedListeners, BLOCKED_ADVICE } from './world.js';
 import { openCity, chunkIndex, buildOpenChunk, groundPlane, hillRing, chunkOf, OPEN, LAYERS, RAY_LAYERS } from './openmap.js';
+import { LAMP_COLORS } from './furniture.js';
 
 // Texturas de grano dibujadas en un lienzo: valen como luminancia (alrededor del
 // blanco), y el color de cada vértice les da el tono. Sin documento (las pruebas
@@ -179,6 +180,7 @@ export class OpenWorld {
 		this.roadsError = null; this.buildingsError = null;
 		this.built = 0; this.buildMs = 0; this.trees = 0; this.lamps = 0;
 		this.furniture = { postes: 0, estacionados: 0, paraderos: 0, senales: 0, semaforos: 0, bancas: 0 };
+		this.signals = null; this.signalTime = 0; this._signalT = 0; // semáforos: el juego los asigna y pone la hora
 		this.pending = 0;          // trozos por construir dentro del radio de carga
 		this.pendingNear = 0;      // trozos por construir dentro del radio que la carga espera
 		this.loadT = 0;
@@ -287,11 +289,13 @@ export class OpenWorld {
 			if ( performance.now() - t0 > budget && c.d > OPEN.readyRadius ) break;
 			const parts = buildOpenChunk( this.city, c.i, c.j );
 			const meshes = [], rays = [];
+			let glowMesh = null;
 			for ( const name of LAYERS ) {
 
 				const ray = RAY_LAYERS.includes( name );
 				const mesh = this._mesh( parts[ name ], this.materials[ name ], ray );
 				if ( ! mesh ) continue;
+				if ( name === 'glow' ) glowMesh = mesh;
 				meshes.push( mesh );
 				if ( ray ) rays.push( mesh );
 				// las luces de las ventanas comparten la geometría de los edificios
@@ -301,7 +305,7 @@ export class OpenWorld {
 
 			this.trees += parts.trees; this.lamps += parts.lamps;
 			const F = this.furniture; F.postes += parts.poles; F.estacionados += parts.parked; F.paraderos += parts.stops; F.senales += parts.signs; F.semaforos += parts.lights; F.bancas += parts.benches;
-			this.chunks.set( `${ c.i },${ c.j }`, { rays, meshes, objects: parts.objects, i: c.i, j: c.j, cx: ( c.i + 0.5 ) * size, cz: ( c.j + 0.5 ) * size } );
+			this.chunks.set( `${ c.i },${ c.j }`, { rays, meshes, objects: parts.objects, lamps: glowMesh && parts.signalLamps.length ? { attr: glowMesh.geometry.getAttribute( 'color' ), list: parts.signalLamps, shown: null } : null, i: c.i, j: c.j, cx: ( c.i + 0.5 ) * size, cz: ( c.j + 0.5 ) * size } );
 			this.built ++;
 			this.pending --;
 			if ( c.d < OPEN.readyRadius ) this.pendingNear --;
@@ -342,6 +346,36 @@ export class OpenWorld {
 
 		this.field.budget = 1;
 		this.field.prewarm();
+
+		// las lámparas de los semáforos siguen el estado de los cruces, unas veces por segundo
+		this._signalT += dt;
+		if ( this.signals && this._signalT > 0.15 ) { this._signalT = 0; this._paintSignals(); }
+
+	}
+
+	_paintSignals() {
+
+		const S = this.signals, time = this.signalTime;
+		for ( const c of this.chunks.values() ) {
+
+			if ( ! c.lamps || ! c.meshes[ 0 ].visible ) continue;
+			let changed = false;
+			const arr = c.lamps.attr.array;
+			for ( const l of c.lamps.list ) {
+
+				const cr = S.atKey( l.key );
+				const state = cr ? S.state( cr, cr.majorIds[ l.group === 0 ? 0 : cr.majorIds.length - 1 ], time ) : ( l.group === 0 ? 'green' : 'red' );
+				const lit = state === l.lamp;
+				if ( l.lit === lit ) continue;
+				l.lit = lit; changed = true;
+				const col = lit ? LAMP_COLORS[ l.lamp ] : LAMP_COLORS.off;
+				for ( let v = l.v0; v < l.v1; v ++ ) { arr[ v * 3 ] = col[ 0 ]; arr[ v * 3 + 1 ] = col[ 1 ]; arr[ v * 3 + 2 ] = col[ 2 ]; }
+
+			}
+
+			if ( changed ) c.lamps.attr.needsUpdate = true;
+
+		}
 
 	}
 

@@ -84,7 +84,7 @@ Todo lo que viste el mapa abierto sale de datos abiertos o se genera en el momen
 - **Texturas.** La calzada, la vereda, el pasto y las fachadas llevan texturas de grano dibujadas en un lienzo al abrir el juego: asfalto con piedras claras, veredas de baldosas, pasto moteado y fachadas con una ventana por celda de 4 m por piso. Son texturas de luminancia que el color de cada vértice tiñe. Las de las calles se repiten cada 6 m a lo largo, con coordenadas acumuladas tramo a tramo para que no se corten en las esquinas; las de las paredes cuentan celdas enteras por pared, así ninguna ventana queda partida. La línea central va discontinua, con una textura de transparencia.
 - **Plazas, parques y agua.** La misma consulta que trae los edificios pide las áreas verdes (`leisure`, `landuse`, `natural`) y el agua (`natural=water`, riberas). Se dibujan como manchas sobre el suelo. Los bosques y parques reciben árboles repartidos por adentro, más densos en los bosques.
 - **Árboles y faroles.** Los árboles que OpenStreetMap tiene mapeados uno por uno (`natural=tree`) aparecen donde están. Además, las calles de 7 m o más reciben árboles de vereda cada 16 m, con huecos al azar, y las vías de 8 m o más (terciarias y mayores) faroles cada 34 m alternando de lado. Ninguno se planta sobre un edificio, sobre el agua ni en un cruce. El tronco y el poste chocan; la copa y el brazo del farol no.
-- **Mobiliario urbano.** Las calles menores llevan postes de luz cada 28 m, alternando de lado. Las vías principales (terciarias y mayores) llevan autos estacionados junto a la solera con dos ruedas sobre la vereda, en el sentido de su lado y con huecos al azar; paraderos abiertos hacia la calle con su señal; y señales de velocidad máxima, una por sentido. En los cruces, dos vías principales reciben semáforos en las esquinas, y una calle menor que llega a una principal recibe un disco Pare. Las plazas tienen bancas y un basurero. Nada se planta encima de otra cosa, en un cruce, sobre un edificio ni sobre el agua. Las placas de las señales salen de un atlas dibujado al vuelo (Pare, 50, paradero y no estacionar).
+- **Mobiliario urbano.** Las calles menores llevan postes de luz cada 28 m, alternando de lado. Las vías principales (terciarias y mayores) llevan autos estacionados junto a la solera con dos ruedas sobre la vereda, en el sentido de su lado y con huecos al azar; paraderos abiertos hacia la calle con su señal; y señales de velocidad máxima, una por sentido. En los cruces, dos vías principales reciben semáforos en las esquinas, y una calle menor que llega a una principal recibe un disco Pare. Los semáforos funcionan: cada cruce reparte sus vías en dos grupos que se turnan el verde (14 s de verde, 3 de ámbar y 1 con todo en rojo), con un desfase propio por cruce, y las lámparas se pintan según ese estado. El tráfico frena en rojo, pasa en ámbar solo si ya no alcanza a detenerse, y ante un Pare se detiene un segundo antes de seguir. Si el camión cruza la línea de detención con luz roja a más de 1 m/s, paga una multa de $ 30.000. Todo sale de `signals.js`, que reconoce los cruces desde la red vial, así que la ciudad de pruebas (sin semáforos dibujados) no los aplica. Las plazas tienen bancas y un basurero. Nada se planta encima de otra cosa, en un cruce, sobre un edificio ni sobre el agua. Las placas de las señales salen de un atlas dibujado al vuelo (Pare, 50, paradero y no estacionar).
 - **Cerros.** Una línea de lomas brumosas rodea la ciudad en el horizonte, a la distancia que la calidad elegida alcanza a dibujar. Es decorativa: no sale de ningún modelo de elevación, y por eso no coincide con los cerros reales.
 
 ### Choques
@@ -107,8 +107,8 @@ La red vial sale de la misma consulta a OpenStreetMap. Con ella el juego elige d
 
 ```
 npm install
-npm test          # pruebas numéricas, sin navegador (337 comprobaciones)
-npm run e2e       # el juego completo en Chromium sin interfaz, 199 comprobaciones (necesita: npm i -D playwright)
+npm test          # pruebas numéricas, sin navegador (358 comprobaciones)
+npm run e2e       # el juego completo en Chromium sin interfaz, 203 comprobaciones (necesita: npm i -D playwright)
 ```
 
 Las pruebas numéricas cubren el modelo del camión (radios de giro contra la teoría, corredor de giro de la norma europea, aceleración, frenado, pendientes, caja de cambios, bajadas, choques frontales y laterales), la geodesia, la red vial, el mapa abierto (triangulación, prismas, trozos, memoria de edificios) y los encargos. `tests/osm-real.test.mjs` usa una muestra real del centro de Temuco (`tests/fixtures/temuco-centro.json`, © OpenStreetMap contributors, ODbL). El entorno de desarrollo no llega a Overpass, así que no hay una muestra real de edificios: `tests/open-fixture.mjs` reparte plantas sintéticas en las manzanas de esa muestra, con las etiquetas que usa el juego.
@@ -139,9 +139,9 @@ Verificado solo contra simulaciones:
 
 - Las sondas de choque van a un metro del suelo. Un balcón o un letrero más alto no detiene al camión, y un auto estacionado sí. Los puntos de cada costado van cada 4,5 m, con un rayo de punta a punta entre ellos que atrapa los postes delgados.
 - Los espejos solo se dibujan en la vista de cabina.
-- En el mapa abierto el suelo es plano: no hay relieve ni soleras, y los cerros del horizonte son decorativos. Los edificios y las áreas dibujados en OpenStreetMap como relaciones (con patio interior o en varias partes) no aparecen, y los edificios que no declaran altura ni pisos reciben una altura típica de su tipo. Las calles se dibujan con un ancho fijo por clase, sin carriles ni cruces resueltos. Los semáforos no cambian: uno queda en verde y el otro en rojo.
+- En el mapa abierto el suelo es plano: no hay relieve ni soleras, y los cerros del horizonte son decorativos. Los edificios y las áreas dibujados en OpenStreetMap como relaciones (con patio interior o en varias partes) no aparecen, y los edificios que no declaran altura ni pisos reciben una altura típica de su tipo. Las calles se dibujan con un ancho fijo por clase, sin carriles ni cruces resueltos. Los semáforos llevan un ciclo fijo, sin giros protegidos ni coordinación entre cruces.
 - El juego supone tránsito por la derecha.
-- El tráfico es sencillo: no hay semáforos ni prioridad en los cruces (dos vehículos pueden cruzarse en una intersección), no cambian de carril ni adelantan, y no esquivan al camión: si está cruzado en su carril, esperan.
+- El tráfico es sencillo: respeta semáforos y Pare, pero en los cruces sin ellos no hay prioridad (dos vehículos pueden cruzarse), no cambian de carril ni adelantan, y no esquivan al camión: si está cruzado en su carril, esperan.
 - La red vial ignora las restricciones de giro de OpenStreetMap (son relaciones, y la consulta trae solo vías).
 - Sin calles en un radio de 2,5 km, o si Overpass no responde, el juego queda en modo libre, sin encargos. Si la respuesta llega tarde, los encargos aparecen durante la partida.
 - Dentro de un marco aislado, los enlaces de la pantalla inicial pueden quedar sin efecto, porque el marco decide si deja abrir otras páginas.
@@ -166,6 +166,10 @@ Verificado solo contra simulaciones:
 El código de Ruta Sur se publica bajo la licencia MIT (ver `LICENSE`). Las obras incluidas conservan sus propias licencias, listadas arriba.
 
 ## Cambios
+
+**0.11.0**
+
+- Semáforos que funcionan: ciclo de verde, ámbar y rojo por cruce, lámparas que cambian, tráfico que se detiene en rojo y ante los discos Pare, y multa de $ 30.000 para el camión que cruza en rojo.
 
 **0.10.0**
 

@@ -101,9 +101,11 @@ export class Traffic {
 	 * graph: grafo vial; rng: aleatorio en [0,1); count: cuántos vehículos mantener;
 	 * groundAt( x, z ) → altura del suelo o null
 	 */
-	constructor( { graph, rng = Math.random, count = 20, groundAt = null } ) {
+	constructor( { graph, rng = Math.random, count = 20, groundAt = null, signals = null } ) {
 
-		this.graph = graph; this.rng = rng; this.count = count; this.groundAt = groundAt;
+		this.graph = graph; this.rng = rng; this.count = count; this.groundAt = groundAt; this.signals = signals;
+		this.time = 0;          // reloj propio, para el ciclo de los semáforos
+		this.waiting = 0;       // vehículos detenidos ante una luz roja o un Pare en el último paso
 		this.vehicles = [];
 		this.enabled = true;
 		this.hits = 0;          // choques del camión contra vehículos
@@ -141,6 +143,7 @@ export class Traffic {
 		v.way = g.ways[ g.wayOf[ e ] ];
 		v.off = laneOffset( v.way );
 		v.turnSlow = this._turnSpeed( e );
+		v.nextEdge = this._next( v ); // la salida del cruce se decide al entrar al tramo, así se puede mirar más allá
 		this._pose( v );
 
 	}
@@ -213,7 +216,7 @@ export class Traffic {
 			if ( kind === 'micro' && w.rank > 4 ) kind = 'auto';
 			const K = KINDS[ kind ];
 			const color = kind === 'micro' ? MICRO_COLORS[ Math.floor( this.rng() * MICRO_COLORS.length ) ] : PALETTE[ Math.floor( this.rng() * PALETTE.length ) ];
-			const v = { id: this.spawned ++, kind, K, color, x: 0, z: 0, y: 0, yaw: 0, v: Math.min( K.vMax, w.maxspeed / 3.6 ) * 0.7, stun: 0, hit: 0, hitCool: 0, since: 0, groundT: this.rng() * 0.3, mesh: null, half: K.length / 2, halfW: K.width / 2, brakingFor: 0 };
+			const v = { id: this.spawned ++, kind, K, color, x: 0, z: 0, y: 0, yaw: 0, v: Math.min( K.vMax, w.maxspeed / 3.6 ) * 0.7, stun: 0, hit: 0, hitCool: 0, since: 0, stopWait: 0, passedNode: - 1, groundT: this.rng() * 0.3, mesh: null, half: K.length / 2, halfW: K.width / 2, brakingFor: 0 };
 			this._place( v, e, s );
 			if ( this.groundAt ) { const gy = this.groundAt( v.x, v.z ); v.y = gy === null ? 0 : gy; }
 			this.vehicles.push( v );
@@ -248,7 +251,7 @@ export class Traffic {
 		} );
 		if ( ! best ) return null;
 		const K = KINDS[ kind ];
-		const v = { id: this.spawned ++, kind, K, color: PALETTE[ 0 ], x: 0, z: 0, y: 0, yaw: 0, v: 0, stun: 1e9, hit: 0, hitCool: 0, since: 0, groundT: 0, mesh: null, half: K.length / 2, halfW: K.width / 2, brakingFor: 0 };
+		const v = { id: this.spawned ++, kind, K, color: PALETTE[ 0 ], x: 0, z: 0, y: 0, yaw: 0, v: 0, stun: 1e9, hit: 0, hitCool: 0, since: 0, stopWait: 0, passedNode: - 1, groundT: 0, mesh: null, half: K.length / 2, halfW: K.width / 2, brakingFor: 0 };
 		this._place( v, best.e, best.s );
 		if ( this.groundAt ) { const gy = this.groundAt( v.x, v.z ); if ( gy !== null ) v.y = gy; }
 		this.vehicles.push( v );
@@ -283,7 +286,8 @@ export class Traffic {
 		if ( ! this.enabled || ! this.graph ) return out;
 		const g = this.graph, V = this.vehicles;
 		const bodies = truckBodies( truck, this._bodies );
-		this.braking = 0;
+		this.braking = 0; this.waiting = 0;
+		this.time += dt;
 
 		for ( const v of V ) {
 
@@ -297,6 +301,36 @@ export class Traffic {
 			let target = Math.min( K.vMax, w.maxspeed / 3.6 * 0.9 );
 			// frenar para el giro al final de la arista: v² = v0² + 2 a d
 			target = Math.min( target, Math.sqrt( v.turnSlow * v.turnSlow + 2 * K.brake * 0.6 * Math.max( 0, remaining ) ) );
+			// semáforo o Pare al final de la arista, o al final de la siguiente si esta es corta:
+			// detenerse en la línea (a stopBack del centro del cruce)
+			let node = g.to[ v.edge ], cr = this.signals && v.passedNode !== node ? this.signals.atNode( node ) : null, toNode = remaining, ruleWay = w.id;
+			if ( this.signals && ! cr && remaining < 35 && v.nextEdge >= 0 ) {
+
+				const n2 = g.to[ v.nextEdge ], c2 = this.signals.atNode( n2 );
+				if ( c2 ) { cr = c2; node = n2; toNode = remaining + g.len[ v.nextEdge ]; ruleWay = g.ways[ g.wayOf[ v.nextEdge ] ].id; }
+
+			}
+
+			if ( cr ) {
+
+				const rule = this.signals.ruleFor( cr, ruleWay, this.time );
+				const stopAt = Math.max( 0, toNode - cr.stopBack );
+				const canStop = v.v * v.v / ( 2 * K.brake ) <= stopAt + 0.5;
+				if ( rule === 'stop' ) {
+
+					// Pare: llegar a la línea, esperar un segundo y seguir
+					if ( stopAt < 0.6 && v.v < 0.15 ) { v.stopWait += dt; if ( v.stopWait >= 1 ) v.passedNode = node; }
+					if ( v.passedNode !== node ) { target = Math.min( target, Math.sqrt( 2 * K.brake * 0.8 * stopAt ) ); if ( stopAt < 0.6 ) target = 0; this.waiting ++; }
+
+				} else if ( rule === 'red' || ( rule === 'amber' && canStop ) ) {
+
+					target = Math.min( target, Math.sqrt( 2 * K.brake * 0.8 * stopAt ) );
+					if ( stopAt < 0.6 ) target = 0;
+					this.waiting ++;
+
+				} else if ( rule === 'green' ) v.stopWait = 0;
+
+			}
 			// el de adelante, en la misma arista o en la siguiente
 			const fx = fwdX( v.yaw ), fz = fwdZ( v.yaw );
 			let ahead = Infinity, aheadV = 0;
@@ -351,7 +385,8 @@ export class Traffic {
 			v.s += v.v * dt;
 			while ( v.s >= g.len[ v.edge ] ) {
 
-				const e2 = this._next( v );
+				const e2 = v.nextEdge >= 0 ? v.nextEdge : this._next( v );
+				v.stopWait = 0; if ( v.passedNode !== g.to[ e2 ] ) v.passedNode = - 1;
 				if ( e2 < 0 ) { v.drop = true; break; }
 				const over = v.s - g.len[ v.edge ];
 				this._place( v, e2, over );
