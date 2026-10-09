@@ -59,9 +59,9 @@ const DEG = Math.PI / 180;
 // far: alcance de la vista [m]; pixelRatio: tope de densidad de píxeles;
 // mirror: ancho de la textura de cada espejo [px]; mirrorBoth: los dos espejos en cada cuadro (si no, uno por cuadro)
 export const QUALITY = {
-	baja: { label: 'Baja', far: 2500, pixelRatio: 1, mirror: 128, mirrorBoth: false, traffic: 12 },
-	media: { label: 'Media', far: 4000, pixelRatio: 1.5, mirror: 192, mirrorBoth: false, traffic: 20 },
-	alta: { label: 'Alta', far: 6000, pixelRatio: 2, mirror: 256, mirrorBoth: true, traffic: 30 },
+	baja: { label: 'Baja', far: 2500, pixelRatio: 1, mirror: 128, mirrorBoth: false, traffic: 18, shadow: null },
+	media: { label: 'Media', far: 4000, pixelRatio: 1.5, mirror: 192, mirrorBoth: false, traffic: 30, shadow: { map: 2048, reach: 150 } },
+	alta: { label: 'Alta', far: 6000, pixelRatio: 2, mirror: 256, mirrorBoth: true, traffic: 44, shadow: { map: 4096, reach: 240 } },
 };
 
 // ---------------------------------------------------------------------------

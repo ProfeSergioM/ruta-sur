@@ -176,13 +176,13 @@ const triArea = ( poly, tris ) => { let a = 0; for ( let i = 0; i < tris.length;
 	// mobiliario urbano: en toda la ciudad hay de cada cosa, y cada pieza queda anotada con su posición
 	{
 
-		const tot = { poles: 0, parked: 0, stops: 0, signs: 0, lights: 0, benches: 0, trees: 0, lamps: 0, objects: 0, solid: 0, sign: 0, decor: 0 };
+		const tot = { poles: 0, parked: 0, stops: 0, signs: 0, lights: 0, benches: 0, crosswalks: 0, trees: 0, lamps: 0, objects: 0, solid: 0, sign: 0, decor: 0 };
 		const kinds = {};
 		let parkedOnLane = 0, parkedChecked = 0;
 		for ( const [ k ] of index ) {
 
 			const [ ci, cj ] = k.split( ',' ).map( Number ), p = buildOpenChunk( city, ci, cj );
-			for ( const n of [ 'poles', 'parked', 'stops', 'signs', 'lights', 'benches', 'trees', 'lamps' ] ) tot[ n ] += p[ n ];
+			for ( const n of [ 'poles', 'parked', 'stops', 'signs', 'lights', 'benches', 'crosswalks', 'trees', 'lamps' ] ) tot[ n ] += p[ n ];
 			tot.objects += p.objects.length; tot.solid += p.solid.indices.length; tot.sign += p.sign.indices.length; tot.decor += p.decor.indices.length;
 			for ( const o of p.objects ) {
 
@@ -199,6 +199,7 @@ const triArea = ( poly, tris ) => { let a = 0; for ( let i = 0; i < tris.length;
 		}
 
 		report( 'Hay mobiliario por toda la ciudad: postes, estacionados, paraderos, señales, semáforos y bancas', tot.poles > 50 && tot.parked > 50 && tot.stops > 3 && tot.signs > 10 && tot.lights > 5 && tot.benches > 10, JSON.stringify( tot ) );
+		report( 'Los cruces con semáforo o Pare llevan pasos de cebra y líneas de detención', tot.crosswalks > 20, `${ tot.crosswalks } pasos de cebra` );
 		report( 'Cada pieza queda anotada con su tipo y posición (más los árboles y faroles)', tot.objects === tot.poles + tot.parked + tot.stops + tot.signs + tot.lights + tot.benches + tot.trees + tot.lamps + ( kinds.basurero || 0 ), Object.entries( kinds ).map( ( [ k, v ] ) => `${ k } ${ v }` ).join( ', ' ) );
 		report( 'Lo sólido, las placas y la decoración van en capas aparte, con contenido', tot.solid > 0 && tot.sign > 0 && tot.decor > 0 && RAY_LAYERS.includes( 'solid' ) && ! RAY_LAYERS.includes( 'decor' ) );
 		report( 'Ningún auto estacionado invade la calzada', parkedChecked > 50 && parkedOnLane === 0, `${ parkedOnLane } de ${ parkedChecked }` );

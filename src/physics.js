@@ -25,6 +25,7 @@ export const VEHICLES = {
 	articulado: {
 		id: 'articulado',
 		label: 'Tracto con semirremolque',
+		menu: false,          // grande para la ciudad: se elige solo con &veh=articulado
 		tractor: {
 			wheelbase: 3.7,       // distancia entre ejes [m]
 			frontOverhang: 1.4,   // del eje delantero al parachoques [m]
@@ -61,6 +62,7 @@ export const VEHICLES = {
 	rigido: {
 		id: 'rigido',
 		label: 'Camión rígido',
+		menu: false,
 		tractor: {
 			wheelbase: 5.2,
 			frontOverhang: 1.4,
@@ -102,7 +104,7 @@ export const VEHICLES = {
 		},
 		trailer: null,
 		// cabina chica, sobre el motor, y furgón bajo: las medidas que no salen de la física
-		cab: { top: 2.75, deflector: false, stack: false, bodyHeight: 2.3 },
+		cab: { top: 2.75, deflector: false, stack: false, bodyHeight: 2.3, style: 'reparto', color: 0xe9e6de },
 		engine: {
 			power: 110e3,          // 150 hp [W]
 			torque: 420,

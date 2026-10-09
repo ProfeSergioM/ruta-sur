@@ -11,6 +11,9 @@ import { RayField, makeTerrain, longRay, nearRay, fetchRoads, fetchBuildings, vi
 import { openCity, chunkIndex, buildOpenChunk, groundPlane, hillRing, chunkOf, OPEN, LAYERS, RAY_LAYERS } from './openmap.js';
 import { LAMP_COLORS } from './furniture.js';
 
+// qué capa proyecta sombra (c) y cuál la recibe (r)
+const SHADOWS = { ground: 'r', park: 'r', walk: 'r', road: 'r', line: 'r', buildings: 'cr', solid: 'cr', decor: 'c', sign: 'c' };
+
 // Texturas de grano dibujadas en un lienzo: valen como luminancia (alrededor del
 // blanco), y el color de cada vértice les da el tono. Sin documento (las pruebas
 // numéricas) no hay texturas y las capas quedan de color plano.
@@ -150,7 +153,8 @@ export class OpenWorld {
 		// Cada capa se acerca un poco más a la cámara en profundidad (desplazamiento de
 		// polígono), así la calzada tapa la vereda y la vereda al suelo a cualquier distancia.
 		// La calzada y la vereda llevan una textura de grano, que el color del vértice tiñe.
-		const layer = ( k, map = null, extra = {} ) => new THREE.MeshBasicMaterial( { vertexColors: true, map, polygonOffset: k !== 0, polygonOffsetFactor: - k, polygonOffsetUnits: - 2 * k, ...extra } );
+		// las capas de la ciudad reciben la luz del sol y del cielo (y las sombras); lo que brilla va aparte
+		const layer = ( k, map = null, extra = {} ) => new THREE.MeshLambertMaterial( { vertexColors: true, map, polygonOffset: k !== 0, polygonOffsetFactor: - k, polygonOffsetUnits: - 2 * k, ...extra } );
 		const T = this.textures = makeTextures();
 		this.materials = {
 			ground: layer( 0, T.grass ), buildings: layer( 0, T.facade ), decor: layer( 0 ), solid: layer( 0 ),
@@ -164,7 +168,7 @@ export class OpenWorld {
 			glow: new THREE.MeshBasicMaterial( { vertexColors: true } ),
 			// charcos de luz bajo los faroles: se suman a la calzada, y de día no se dibujan
 			pool: new THREE.MeshBasicMaterial( { vertexColors: true, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, polygonOffset: true, polygonOffsetFactor: - 5, polygonOffsetUnits: - 10 } ),
-			plane: new THREE.MeshBasicMaterial( { vertexColors: true, polygonOffset: true, polygonOffsetFactor: 2, polygonOffsetUnits: 4 } ),
+			plane: new THREE.MeshLambertMaterial( { vertexColors: true, polygonOffset: true, polygonOffsetFactor: 2, polygonOffsetUnits: 4 } ),
 			hills: new THREE.MeshBasicMaterial( { vertexColors: true } ),
 		};
 		this.materials.pool.visible = false;
@@ -179,12 +183,12 @@ export class OpenWorld {
 		this.roadsData = null; this.buildingsData = null;
 		this.roadsError = null; this.buildingsError = null;
 		this.built = 0; this.buildMs = 0; this.trees = 0; this.lamps = 0;
-		this.furniture = { postes: 0, estacionados: 0, paraderos: 0, senales: 0, semaforos: 0, bancas: 0 };
+		this.furniture = { postes: 0, estacionados: 0, paraderos: 0, senales: 0, semaforos: 0, bancas: 0, cebras: 0 };
 		this.signals = null; this.signalTime = 0; this._signalT = 0; // semáforos: el juego los asigna y pone la hora
 		this.pending = 0;          // trozos por construir dentro del radio de carga
 		this.pendingNear = 0;      // trozos por construir dentro del radio que la carga espera
 		this.loadT = 0;
-		this.ground = this._mesh( groundPlane(), this.materials.plane );
+		this.ground = this._mesh( groundPlane(), this.materials.plane, true, 'r' );
 		// los cerros quedan dentro del alcance de la vista, entre la mitad y el 80 % del fondo, para que la bruma los suavice
 		this.hills = this._mesh( hillRing( far * 0.55, far * 0.8 ), this.materials.hills, false );
 		this._roads = fetchRoads( lat, lon, OPEN.roadsRadius ).then( r => { this.roadsData = r; return r; }, e => { this.roadsError = e; throw e; } );
@@ -241,7 +245,7 @@ export class OpenWorld {
 
 	}
 
-	_mesh( m, material, rays = true ) {
+	_mesh( m, material, rays = true, shadow = '' ) {
 
 		if ( m.indices.length === 0 ) return null;
 		const g = new THREE.BufferGeometry();
@@ -249,7 +253,9 @@ export class OpenWorld {
 		g.setAttribute( 'color', new THREE.BufferAttribute( m.colors, 3 ) );
 		if ( m.uvs && m.uvs.length === m.positions.length / 3 * 2 ) g.setAttribute( 'uv', new THREE.BufferAttribute( m.uvs, 2 ) );
 		g.setIndex( new THREE.BufferAttribute( m.indices, 1 ) );
+		if ( material.isMeshLambertMaterial ) g.computeVertexNormals();
 		const mesh = new THREE.Mesh( g, material );
+		mesh.castShadow = shadow.includes( 'c' ); mesh.receiveShadow = shadow.includes( 'r' );
 		mesh.matrixAutoUpdate = false;
 		this.group.add( mesh );
 		mesh.updateWorldMatrix( true );
@@ -293,7 +299,7 @@ export class OpenWorld {
 			for ( const name of LAYERS ) {
 
 				const ray = RAY_LAYERS.includes( name );
-				const mesh = this._mesh( parts[ name ], this.materials[ name ], ray );
+				const mesh = this._mesh( parts[ name ], this.materials[ name ], ray, SHADOWS[ name ] || '' );
 				if ( ! mesh ) continue;
 				if ( name === 'glow' ) glowMesh = mesh;
 				meshes.push( mesh );
@@ -304,7 +310,7 @@ export class OpenWorld {
 			}
 
 			this.trees += parts.trees; this.lamps += parts.lamps;
-			const F = this.furniture; F.postes += parts.poles; F.estacionados += parts.parked; F.paraderos += parts.stops; F.senales += parts.signs; F.semaforos += parts.lights; F.bancas += parts.benches;
+			const F = this.furniture; F.postes += parts.poles; F.estacionados += parts.parked; F.paraderos += parts.stops; F.senales += parts.signs; F.semaforos += parts.lights; F.bancas += parts.benches; F.cebras += parts.crosswalks;
 			this.chunks.set( `${ c.i },${ c.j }`, { rays, meshes, objects: parts.objects, lamps: glowMesh && parts.signalLamps.length ? { attr: glowMesh.geometry.getAttribute( 'color' ), list: parts.signalLamps, shown: null } : null, i: c.i, j: c.j, cx: ( c.i + 0.5 ) * size, cz: ( c.j + 0.5 ) * size } );
 			this.built ++;
 			this.pending --;
@@ -389,7 +395,10 @@ export class OpenWorld {
 	setLight( { tint, lamps = 0, level = 1 } ) {
 
 		const M = this.materials;
-		for ( const name of [ 'ground', 'buildings', 'park', 'walk', 'road', 'line', 'decor', 'solid', 'sign', 'plane', 'hills' ] ) M[ name ].color.setRGB( tint[ 0 ], tint[ 1 ], tint[ 2 ] );
+		// las capas iluminadas toman del tinte solo el color (la luz del sol y del cielo pone la oscuridad); los cerros, lejos y sin luz, el tinte entero
+		const mx = Math.max( tint[ 0 ], tint[ 1 ], tint[ 2 ] ) || 1;
+		for ( const name of [ 'ground', 'buildings', 'park', 'walk', 'road', 'line', 'decor', 'solid', 'sign', 'plane' ] ) M[ name ].color.setRGB( tint[ 0 ] / mx, tint[ 1 ] / mx, tint[ 2 ] / mx );
+		M.hills.color.setRGB( tint[ 0 ], tint[ 1 ], tint[ 2 ] );
 		this.lampsOn = lamps > 0;
 		M.glow.color.setRGB( 0.75 + 0.25 * lamps, 0.75 + 0.17 * lamps, 0.72 - 0.02 * lamps );
 		M.pool.visible = M.windows.visible = this.lampsOn;

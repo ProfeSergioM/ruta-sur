@@ -47,7 +47,7 @@ R.check( 'Hay red vial y un encargo ofrecido', s.graph > 50 && s.jobs && s.jobs.
 const st = await page.evaluate( () => { const w = window.__rutaSur.world; return { ...w.stats(), kind: w.kind, provider: w.provider, credit: document.getElementById( 'a-logo' ).textContent }; } );
 R.check( 'La ciudad trae los edificios y las vías de OpenStreetMap', st.kind === 'open' && st.edificios > 100 && st.vias > 40, `${ st.edificios } edificios, ${ st.vias } vías, ${ st.visibles } trozos` );
 R.check( 'Y la ambientación: plazas, árboles mapeados y de vereda, faroles', st.manchas > 10 && st.arbolesOSM > 10 && st.arboles > 50 && st.faroles > 0, `${ st.manchas } manchas, ${ st.arbolesOSM } árboles mapeados, ${ st.arboles } árboles dibujados, ${ st.faroles } faroles` );
-R.check( 'Y el mobiliario urbano: postes, autos estacionados, paraderos, señales, semáforos y bancas', st.postes > 5 && st.estacionados > 10 && st.paraderos > 0 && st.senales > 2 && st.semaforos > 0 && st.bancas > 0 && st.cruces > 10, `${ st.postes } postes, ${ st.estacionados } estacionados, ${ st.paraderos } paraderos, ${ st.senales } señales, ${ st.semaforos } semáforos, ${ st.bancas } bancas, ${ st.cruces } cruces` );
+R.check( 'Y el mobiliario urbano: postes, autos estacionados, paraderos, señales, semáforos y bancas', st.postes > 5 && st.estacionados > 10 && st.paraderos > 0 && st.senales > 2 && st.semaforos > 0 && st.bancas > 0 && st.cruces > 10 && st.cebras > 5, `${ st.cebras } pasos de cebra, ${ st.postes } postes, ${ st.estacionados } estacionados, ${ st.paraderos } paraderos, ${ st.senales } señales, ${ st.semaforos } semáforos, ${ st.bancas } bancas, ${ st.cruces } cruces` );
 R.check( 'La atribución nombra a OpenStreetMap', /OpenStreetMap/.test( st.provider ) && /OpenStreetMap/.test( st.credit ), st.credit );
 await sleep( page, 2500 );
 await page.screenshot( { path: `${ SHOTS }/abierto-01-cabina.png` } );
@@ -88,7 +88,7 @@ const traffic = await page.evaluate( () => {
 	return { n: T.vehicles.length, first: first.length, moved, hits: T.hits, minDist: Math.min( ...T.vehicles.map( v => Math.hypot( v.x - t.x, v.z - t.z ) ) ) };
 
 } );
-R.check( 'Al activar el tráfico, los vehículos circulan por las calles reales', traffic.n >= 8 && traffic.moved >= 4 && traffic.hits === 0, `${ traffic.n } vehículos, ${ traffic.moved } de ${ traffic.first } se movieron, el más cercano a ${ traffic.minDist.toFixed( 0 ) } m` );
+R.check( 'Al activar el tráfico, los vehículos circulan por las calles reales', traffic.n >= 8 && traffic.moved >= 4 && traffic.hits === 0, `${ traffic.n } vehículos, ${ traffic.moved } de ${ traffic.first } se movieron, el más cercano a ${ traffic.minDist.toFixed( 0 ) } m, ${ traffic.hits } choques` );
 R.check( 'Siempre con suelo bajo las ruedas, plano', drive.noGround === 0 && drive.maxY < 0.1 && drive.minSamples >= 20, `altura máxima ${ drive.maxY.toFixed( 2 ) } m, mínimo ${ drive.minSamples } muestras` );
 R.info( 'Trozos', `${ drive.chunks } en memoria, ${ drive.built } construidos en ${ drive.ms.toFixed( 0 ) } ms` );
 await page.keyboard.press( 'KeyC' );
@@ -164,7 +164,8 @@ const solid = await page.evaluate( () => {
 	// el camión 16 m detrás del auto, en su mismo sentido, y avanza despacio hasta tocarlo
 	const fx = - Math.sin( car.yaw ), fz = - Math.cos( car.yaw );
 	const compass = ( Math.PI - car.yaw ) * 180 / Math.PI;
-	if ( ! g.teleport( car.x - fx * 16, car.z - fz * 16, compass ) ) return { found: true, placed: false };
+	// corrido 0,6 m hacia la calle: así el costado no roza los árboles de la vereda y el frente sí alcanza al auto
+	if ( ! g.teleport( car.x - fx * 16 + fz * 0.6, car.z - fz * 16 - fx * 0.6, compass ) ) return { found: true, placed: false };
 	g.lastImpact = 0; g.ghost = false;
 	const damage0 = t.damage;
 	let time = 0;
@@ -172,7 +173,9 @@ const solid = await page.evaluate( () => {
 	g.advance( 1.5, { accel: 0.45 } ); // insistir no lo atraviesa
 	const front = t.spec.tractor.wheelbase + t.spec.tractor.frontOverhang;
 	const px = t.x - Math.sin( t.yaw ) * front, pz = t.z - Math.cos( t.yaw ) * front;
-	const ahead = ( car.x - px ) * fx + ( car.z - pz ) * fz; // del parachoques al centro del auto, en el sentido de marcha
+	// del parachoques al centro del auto estacionado que quedó más cerca por delante (los de la fila van cada 7,5 m)
+	let ahead = Infinity;
+	for ( const c of W.chunks.values() ) for ( const o of c.objects || [] ) { if ( o.kind !== 'estacionado' ) continue; const d = ( o.x - px ) * fx + ( o.z - pz ) * fz, side = Math.abs( ( o.x - px ) * fz - ( o.z - pz ) * fx ); if ( d > 0 && side < 2 && d < ahead ) ahead = d; }
 	return { found: true, placed: true, time, blocked: t.blocked, impact: g.lastImpact, ahead, v: t.v, damage: t.damage - damage0 };
 
 } );
@@ -250,9 +253,9 @@ R.check( 'La partida empieza a las 17 y el reloj lo muestra', day.hour > 17 && d
 R.check( 'De día las luces están apagadas y la ciudad sin tinte', ! day.lamps && ! day.pool && day.tint > 0.9 && ! day.windows, JSON.stringify( day ) );
 for ( let i = 0; i < 4; i ++ ) { await page.keyboard.press( 'KeyT' ); await sleep( page, 150 ); }
 await sleep( page, 600 );
-const night = await page.evaluate( () => { const g = window.__rutaSur, M = g.world.materials; return { hour: g.hour, clock: document.getElementById( 'reloj' ).textContent, lamps: g.world.lampsOn, pool: M.pool.visible && M.pool.opacity > 0.3, glow: M.glow.color.r > 0.95, tint: M.road.color.r, windows: M.windows.visible && M.windows.opacity > 0.95, sky: g.world.scene.fog.color.r, beam: g.model.root.children[ 0 ].children.some( c => c.material && c.material.blending === 2 && c.visible && c.material.opacity > 0.5 ) }; } );
+const night = await page.evaluate( () => { const g = window.__rutaSur, M = g.world.materials; return { hour: g.hour, clock: document.getElementById( 'reloj' ).textContent, lamps: g.world.lampsOn, pool: M.pool.visible && M.pool.opacity > 0.3, glow: M.glow.color.r > 0.95, tint: M.hills.color.r, hemi: g.model.root.parent.children.find( o => o.isHemisphereLight ).intensity, windows: M.windows.visible && M.windows.opacity > 0.95, sky: g.world.scene.fog.color.r, beam: g.model.root.children[ 0 ].children.some( c => c.material && c.material.blending === 2 && c.visible && c.material.opacity > 0.5 ) }; } );
 R.check( 'Cuatro veces T adelantan a las 21 y es de noche', night.hour >= 21 && night.hour < 22 && /^21:/.test( night.clock ), night.clock );
-R.check( 'De noche se encienden los faroles, sus charcos, las ventanas y los focos del camión, y la ciudad se oscurece', night.lamps && night.pool && night.glow && night.windows && night.tint < 0.4 && night.sky < 0.2 && night.beam, JSON.stringify( night ) );
+R.check( 'De noche se encienden los faroles, sus charcos, las ventanas y los focos del camión, y la ciudad se oscurece', night.lamps && night.pool && night.glow && night.windows && night.tint < 0.4 && night.hemi < 0.5 && night.sky < 0.2 && night.beam, JSON.stringify( night ) );
 await page.keyboard.press( 'KeyC' ); await page.keyboard.press( 'KeyC' ); // exterior
 await sleep( page, 2500 );
 await page.screenshot( { path: `${ SHOTS }/abierto-07-noche.png` } );

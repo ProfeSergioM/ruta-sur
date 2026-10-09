@@ -14,7 +14,7 @@ import { Mirrors } from './mirrors.js';
 import { Traffic, TrafficView } from './traffic.js';
 import { Signals, RED_LIGHT_FINE } from './signals.js';
 import { Radio } from './radio.js';
-import { daylight, clockText, wrapHour, DAY_SECONDS_PER_HOUR } from './daylight.js';
+import { daylight, clockText, wrapHour, sunHeight, SUNRISE, SUNSET, DAY_SECONDS_PER_HOUR } from './daylight.js';
 import { compassFromYaw, compassName } from './geo.js';
 
 // La versión sale de package.json: tools/build.mjs la fija al armar el archivo.
@@ -48,7 +48,7 @@ const store = {
 	write( key, value ) { try { localStorage.setItem( 'rutasur.' + key, JSON.stringify( value ) ); } catch ( e ) { /* sin almacenamiento */ } },
 };
 
-const config = Object.assign( { city: 'temuco', coords: '', truck: 'articulado', quality: 'media' }, store.read( 'config', {} ) );
+const config = Object.assign( { city: 'temuco', coords: '', truck: 'reparto', quality: 'media' }, store.read( 'config', {} ) );
 
 
 function parseCoords( text ) {
@@ -114,7 +114,36 @@ const hemi = new THREE.HemisphereLight( 0xffffff, 0x5a6470, 1.25 );
 scene.add( hemi );
 const sun = new THREE.DirectionalLight( 0xfff1d6, 1.7 );
 sun.position.set( - 0.5, 1, 0.35 );
-scene.add( sun );
+scene.add( sun, sun.target );
+// sombras del sol: un mapa ortográfico que sigue al camión; la calidad decide su tamaño
+sun.shadow.bias = - 0.0004; sun.shadow.normalBias = 0.5;
+sun.shadow.camera.near = 20; sun.shadow.camera.far = 1500;
+const _sunDir = new THREE.Vector3( - 0.5, 1, 0.35 ).normalize();
+
+function setupShadows( quality ) {
+
+	const on = !! quality.shadow && !! renderer;
+	if ( renderer ) renderer.shadowMap.enabled = on;
+	sun.castShadow = on;
+	if ( ! on ) return;
+	const r = quality.shadow.reach;
+	sun.shadow.mapSize.set( quality.shadow.map, quality.shadow.map );
+	sun.shadow.camera.left = - r; sun.shadow.camera.right = r; sun.shadow.camera.top = r; sun.shadow.camera.bottom = - r;
+	sun.shadow.camera.updateProjectionMatrix();
+	if ( sun.shadow.map ) { sun.shadow.map.dispose(); sun.shadow.map = null; }
+
+}
+
+// El sol sale por el este, pasa por el norte (hemisferio sur) y se pone por el oeste; con
+// +X al oeste y +Z al norte. De noche conserva la última dirección (su luz está apagada).
+function sunDirection( hour, out ) {
+
+	const s = sunHeight( hour );
+	if ( s <= 0.02 ) return out;
+	const a = Math.PI * ( hour - SUNRISE ) / ( SUNSET - SUNRISE ), e = Math.asin( Math.min( 1, s ) );
+	return out.set( - Math.cos( a ) * Math.cos( e ), Math.sin( e ), 0.65 * Math.sin( a ) * Math.cos( e ) ).normalize();
+
+}
 
 // cielo: una cúpula con degradado que acompaña a la cámara
 const sky = new THREE.Mesh(
@@ -208,7 +237,10 @@ function buildMenu() {
 	// Marca la opción guardada. Se busca por valor, sin armar un selector con un dato que viene del almacenamiento.
 	const check = ( host, value ) => { const all = [ ...host.querySelectorAll( 'input' ) ]; ( all.find( i => i.value === value ) || all[ 0 ] ).checked = true; };
 
-	chips( $( 'camiones' ), 'camion', Object.values( VEHICLES ).map( v => [ v.id, v.label ] ), config.truck );
+	// solo el camión de reparto se ofrece: los otros dos son grandes para la ciudad (siguen por &veh=)
+	const offered = Object.values( VEHICLES ).filter( v => v.menu !== false );
+	if ( ! offered.some( v => v.id === config.truck ) ) config.truck = offered[ 0 ].id;
+	chips( $( 'camiones' ), 'camion', offered.map( v => [ v.id, v.label ] ), config.truck );
 	chips( $( 'calidades' ), 'calidad', Object.entries( QUALITY ).map( ( [ id, q ] ) => [ id, q.label ] ), config.quality );
 	check( cities, config.city );
 
@@ -335,10 +367,11 @@ function startFromMenu( mode ) {
 function start( opts ) {
 
 	teardown();
-	game.spec = VEHICLES[ opts.truck ] || VEHICLES.articulado;
+	game.spec = VEHICLES[ opts.truck ] || VEHICLES.reparto;
 	game.quality = QUALITY[ opts.quality ] || QUALITY.media;
 	game.hour = Number.isFinite( opts.hour ) ? wrapHour( opts.hour ) : 17;
 	renderer.setPixelRatio( Math.min( window.devicePixelRatio || 1, game.quality.pixelRatio ) );
+	setupShadows( game.quality );
 	// durante la carga la cámara mira desde muy alto, hasta saber dónde está el suelo
 	camera.far = 20000; camera.near = 5; camera.fov = 50;
 	camera.updateProjectionMatrix();
@@ -504,6 +537,7 @@ function beginDriving( t ) {
 	const world = game.world;
 	game.truck = t;
 	game.model = createTruckModel( game.spec );
+	game.model.root.traverse( o => { if ( o.isMesh && o.material && ! o.material.transparent ) { o.castShadow = true; o.receiveShadow = true; } } );
 	scene.add( game.model.root );
 	game.mirrors = new Mirrors( renderer, scene, { width: game.quality.mirror, both: game.quality.mirrorBoth, far: game.quality.far } );
 	game.mirrors.attach( game.model, world, [ $( 'espejo-izq' ), $( 'espejo-der' ) ], game.cam.mode === 0 );
@@ -637,8 +671,14 @@ function applyDaylight() {
 	sky.material.uniforms.horizon.value.copy( _sky.horizon );
 	scene.fog.color.copy( _sky.horizon );
 	scene.background = _sky.horizon;
-	hemi.intensity = 1.25 * ( 0.12 + 0.88 * d.level );
+	// de noche queda una luz de cielo suficiente para ver la calle (los faroles y las ventanas ponen el resto)
+	hemi.intensity = 1.25 * ( 0.3 + 0.7 * d.level );
 	sun.intensity = 1.7 * d.sun;
+	sunDirection( game.hour, _sunDir );
+	// el sol se coloca lejos del camión, mirándolo: así el mapa de sombras cubre lo que lo rodea
+	const anchor = game.truck || _focus;
+	sun.target.position.set( anchor.x, 0, anchor.z );
+	sun.position.set( anchor.x + _sunDir.x * 600, _sunDir.y * 600, anchor.z + _sunDir.z * 600 );
 	sun.color.setRGB( 1, 0.95 - 0.25 * d.dusk, 0.84 - 0.4 * d.dusk );
 	if ( game.world && game.world.setLight ) game.world.setLight( d );
 	if ( game.model ) game.model.setNight( 1 - d.level );

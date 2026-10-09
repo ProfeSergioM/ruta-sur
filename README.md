@@ -1,6 +1,6 @@
 # Ruta Sur
 
-Simulador de camiones que corre en el navegador sobre un mapa abierto levantado desde OpenStreetMap: las calles verdaderas de una ciudad, con sus edificios como cajas de colores. El jugador conduce un tracto con semirremolque, un camión rígido o un camión de reparto urbano, y reparte cargas entre esquinas.
+Simulador de camiones que corre en el navegador sobre un mapa abierto levantado desde OpenStreetMap: las calles verdaderas de una ciudad, con sus edificios como cajas de colores. El jugador conduce un camión de reparto urbano y reparte cargas entre esquinas (el tracto con semirremolque y el camión rígido siguen disponibles con `&veh=articulado` o `&veh=rigido` en la dirección: son grandes para una ciudad).
 
 Este es un prototipo. Hasta la versión 0.4 manejaba también sobre la malla 3D fotorrealista de Google, que exige una credencial de pago o una cuenta de Cesium ion; la 0.5 deja solo los datos abiertos.
 
@@ -69,6 +69,10 @@ Convención de ejes: +X al oeste, +Y arriba, +Z al norte, con origen en el punto
 
 El mundo principal del juego no usa fotografía. Las calles salen de la misma consulta a Overpass que la red vial, y se dibujan como franjas de asfalto con una vereda a cada lado y el ancho típico de su clase (una residencial, 7 m; una primaria, 10 m). Los edificios salen de una segunda consulta, de las vías cerradas con etiqueta `building` en 1,5 km alrededor del punto elegido, y se extruyen desde su planta: con la altura que OSM declare (`height`), o con los pisos (`building:levels`, a 3,2 m cada uno), o con una altura típica de su tipo (una casa, 5,5 m; un edificio de departamentos, 15 m), dispersa un poco para que una cuadra no salga pareja. Las plantas cóncavas se triangulan por recorte de orejas. El suelo es plano. Todo se arma por trozos de 120 m alrededor del camión, con un BVH por trozo para la física, y los trozos lejanos se liberan. Los edificios se guardan en el navegador dos semanas, como las calles.
 
+### Luz, sombras y materiales
+
+Las capas del mapa abierto (suelo, veredas, calzadas, edificios, mobiliario) reciben la luz del sol y del cielo, así que el tinte del día solo les pone el color y la oscuridad la ponen las luces. El sol proyecta sombras: un mapa de sombras ortográfico sigue al camión (150 m a la redonda en calidad media, 240 m en alta; en baja no hay sombras) y lo proyectan los edificios, los árboles, el mobiliario, los vehículos y el camión. El sol sale por el este, pasa por el norte (hemisferio sur) y se pone por el oeste según la hora del juego, con lo que las sombras giran y se alargan hacia el atardecer. Las vías principales llevan líneas de borde, y los cruces con semáforo o disco Pare pasos de cebra con su línea de detención, pintados con la misma textura de guiones de la línea central.
+
 ### Día y noche
 
 La partida empieza a las 17:00 y el reloj del tablero avanza una hora del juego por cada minuto de reloj (la tecla T adelanta una hora). El sol sale a las 6:30 y se pone a las 19:30. Con la hora cambian el cielo y la bruma (naranja en el crepúsculo, azul oscuro de noche), la fuerza del sol sobre el camión y un tinte que oscurece la ciudad. Al crepúsculo se encienden las luces, poco a poco y sin saltos: los faroles brillan y dejan charcos de luz sobre la calzada, las ventanas se encienden en un patrón de cuatro por cuatro celdas con algunas apagadas (una capa de luz que se suma a la fachada, con la misma geometría), y el camión prende los focos, que dibujan un haz sobre la calzada por delante. Todo sale de `daylight.js`, una función pura de la hora, que las pruebas numéricas recorren hora a hora. El ciclo corre igual en la ciudad de pruebas, sin faroles.
@@ -93,7 +97,7 @@ El camión choca con lo que la malla tenga a un metro del suelo: en el mapa abie
 
 ### Tráfico
 
-Por las calles circulan autos, camionetas y micros. Cada uno recorre la red vial (la misma que usan los encargos) por su lado derecho, elige al azar la calle que sigue en cada cruce con preferencia por seguir derecho y por las vías principales, frena antes de un giro cerrado y guarda distancia con el de adelante: siete metros más un tiempo de reacción por su velocidad. El camión es un obstáculo más: si está delante, en su carril, el vehículo frena y espera. Aparecen entre 90 y 380 m del camión, sobre calles del componente principal de la red, y desaparecen más allá de 520 m; la calidad fija cuántos circulan a la vez (12, 20 o 30). Con `&trafico=0` en la dirección las calles quedan vacías, y en la pausa se apaga o enciende.
+Por las calles circulan autos, camionetas y micros. Cada uno recorre la red vial (la misma que usan los encargos) por su lado derecho, elige al azar la calle que sigue en cada cruce con preferencia por seguir derecho y por las vías principales, frena antes de un giro cerrado y guarda distancia con el de adelante: siete metros más un tiempo de reacción por su velocidad. El camión es un obstáculo más: si está delante, en su carril, el vehículo frena y espera. Aparecen entre 90 y 380 m del camión, sobre calles del componente principal de la red, y desaparecen más allá de 520 m; la calidad fija cuántos circulan a la vez (18, 30 o 44). Con `&trafico=0` en la dirección las calles quedan vacías, y en la pausa se apaga o enciende.
 
 Si el camión embiste a uno, el choque se detecta entre rectángulos en planta (tracto, semirremolque y vehículo) y la velocidad de cierre se mide sobre la normal de menor penetración. El camión pierde la velocidad que la cantidad de movimiento indica (un auto de 1,3 t contra 20 t frena poco), recibe un daño menor que contra un muro, y paga una multa que sale de la caja: $ 20.000 por un auto o una camioneta, $ 40.000 por una micro. El vehículo queda detenido cinco segundos, desplazado fuera del camión, y después sigue su camino. De noche encienden focos y pilotos, y el minimapa los muestra como puntos. El tráfico corre también en la ciudad de pruebas, sin conexión.
 
@@ -107,7 +111,7 @@ La red vial sale de la misma consulta a OpenStreetMap. Con ella el juego elige d
 
 ```
 npm install
-npm test          # pruebas numéricas, sin navegador (361 comprobaciones)
+npm test          # pruebas numéricas, sin navegador (362 comprobaciones)
 npm run e2e       # el juego completo en Chromium sin interfaz, 249 comprobaciones (necesita: npm i -D playwright)
 ```
 
@@ -166,6 +170,13 @@ Verificado solo contra simulaciones:
 El código de Ruta Sur se publica bajo la licencia MIT (ver `LICENSE`). Las obras incluidas conservan sus propias licencias, listadas arriba.
 
 ## Cambios
+
+**0.13.0**
+
+- Sombras reales en el mapa abierto, con el sol que gira con la hora; las capas de la ciudad pasan a materiales iluminados.
+- Pasos de cebra y líneas de detención en los cruces con semáforo o Pare, y líneas de borde en las vías principales.
+- Más tráfico: 18, 30 o 44 vehículos según la calidad. Un vehículo espera en el cruce si la entrada de la calle siguiente está ocupada (el camión cruzado u otro vehículo), en vez de aparecer encima.
+- Camión de reparto rediseñado: parabrisas inclinado, parrilla y parachoques, focos y señalizadores, pasos de rueda, franja de la marca, cortina trasera, parachoques con peldaño, luces traseras, estanque y escape. La pantalla inicial ofrece solo este camión.
 
 **0.12.0**
 

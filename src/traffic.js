@@ -228,6 +228,19 @@ export class Traffic {
 
 	}
 
+	// ¿Hay algo encima de la entrada de la arista `e` (a `s` metros del nodo) para el vehículo `v`?
+	_entryBlocked( e, s, v, bodies ) {
+
+		const g = this.graph, a = g.from[ e ], ux = g.ux[ e ], uz = g.uz[ e ], off = laneOffset( g.ways[ g.wayOf[ e ] ] );
+		const probe = this._probe || ( this._probe = { x: 0, z: 0, yaw: 0, half: 0, halfW: 0 } );
+		probe.x = g.x[ a ] + ux * ( s + v.half + 2 ) - uz * off; probe.z = g.z[ a ] + uz * ( s + v.half + 2 ) + ux * off;
+		probe.yaw = Math.atan2( - ux, - uz ); probe.half = v.half + 2; probe.halfW = v.halfW;
+		for ( const b of bodies ) if ( Math.hypot( b.x - probe.x, b.z - probe.z ) < 30 && boxGap( probe, b ) < 0.5 ) return true;
+		for ( const o of this.vehicles ) if ( o !== v && Math.hypot( o.x - probe.x, o.z - probe.z ) < 20 && boxGap( probe, o ) < 0.5 ) return true;
+		return false;
+
+	}
+
 	// Para pruebas: deja un vehículo detenido a `dist` metros por delante del camión, sobre su calle
 	spawnAhead( truck, dist = 30, kind = 'auto' ) {
 
@@ -386,9 +399,11 @@ export class Traffic {
 			while ( v.s >= g.len[ v.edge ] ) {
 
 				const e2 = v.nextEdge >= 0 ? v.nextEdge : this._next( v );
-				v.stopWait = 0; if ( v.passedNode !== g.to[ e2 ] ) v.passedNode = - 1;
 				if ( e2 < 0 ) { v.drop = true; break; }
 				const over = v.s - g.len[ v.edge ];
+				// si la entrada del tramo siguiente está ocupada (el camión cruzado, otro vehículo), espera en el cruce
+				if ( this._entryBlocked( e2, over, v, bodies ) ) { v.s = g.len[ v.edge ] - 0.05; v.v = 0; break; }
+				v.stopWait = 0; if ( v.passedNode !== g.to[ e2 ] ) v.passedNode = - 1;
 				this._place( v, e2, over );
 
 			}
@@ -542,6 +557,7 @@ export class TrafficView {
 			if ( ! v.mesh ) {
 
 				const m = new THREE.Mesh( bodyGeometry( v.kind, v.color ), this.bodyMat );
+				m.castShadow = true;
 				m.add( new THREE.Mesh( lightsGeometry( v.kind ), this.lightMat ) );
 				v.mesh = m; this.group.add( m );
 

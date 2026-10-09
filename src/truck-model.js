@@ -10,7 +10,7 @@ import { trailerAxleXZ } from './physics.js';
 const C = {
 	cab: 0xc23b22, cabDark: 0x8f2a18, glass: 0x1b2730, steel: 0x2c3036, rubber: 0x16171a,
 	rim: 0xb9bcc0, chrome: 0xc9ccd0, body: 0xe9e6de, bodyShade: 0xcfccc4, green: 0x0e6b45,
-	dash: 0x23272c, dashLight: 0x363b42, lampRed: 0xd32f1e, lampWhite: 0xfff3cf, amber: 0xf2a33a,
+	dash: 0x23272c, dashLight: 0x363b42, lampRed: 0xd32f1e, lampWhite: 0xfff3cf, amber: 0xf2a33a, trim: 0x1e2124,
 };
 
 const mats = {};
@@ -115,7 +115,8 @@ export function createTruckModel( spec, name = 'Ruta Sur' ) {
 	root.name = 'Camión';
 
 	const steel = mat( 'steel', { color: C.steel } );
-	const cabMat = mat( 'cab', { color: C.cab } );
+	const cabSpec0 = spec.cab || {};
+	const cabMat = cabSpec0.color ? mat( 'cab-' + cabSpec0.color, { color: cabSpec0.color } ) : mat( 'cab', { color: C.cab } );
 	const glass = mat( 'glass', { color: C.glass } );
 	const shadowMat = new THREE.MeshBasicMaterial( { map: shadowTexture(), transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: - 2, polygonOffsetUnits: - 2, fog: true } );
 
@@ -169,7 +170,7 @@ export function createTruckModel( spec, name = 'Ruta Sur' ) {
 	exterior.add( box( 0.04, 0.72, 0.95, glass, - W / 2 + 0.01, cabY( 2.72 + dy ), cabZ( zFront + 0.75 ) ) );
 	exterior.add( box( 0.04, 0.72, 0.95, glass, W / 2 - 0.01, cabY( 2.72 + dy ), cabZ( zFront + 0.75 ) ) );
 	exterior.add( box( W - 0.7, Math.min( 0.75, 0.75 + dy * 0.5 ), 0.05, steel, 0, cabY( 1.62 + dy * 0.5 ), cabZ( zFront - 0.015 ) ) );
-	exterior.add( box( W, 0.42, 0.3, mat( 'cabDark', { color: C.cabDark } ), 0, cabY( 0.72 ), cabZ( zFront + 0.12 ) ) );
+	if ( cabSpec.style !== 'reparto' ) exterior.add( box( W, 0.42, 0.3, mat( 'cabDark', { color: C.cabDark } ), 0, cabY( 0.72 ), cabZ( zFront + 0.12 ) ) );
 	const lamp = mat( 'lampWhite', { color: C.lampWhite, emissive: C.lampWhite, emissiveIntensity: 0.6 } );
 	exterior.add( box( 0.36, 0.16, 0.05, lamp, - W / 2 + 0.3, cabY( 0.92 ), cabZ( zFront - 0.02 ) ) );
 	exterior.add( box( 0.36, 0.16, 0.05, lamp, W / 2 - 0.3, cabY( 0.92 ), cabZ( zFront - 0.02 ) ) );
@@ -208,6 +209,39 @@ export function createTruckModel( spec, name = 'Ruta Sur' ) {
 
 	}
 
+	// --- camión de reparto: cabina baja con parabrisas inclinado, parrilla, parachoques, pasos de rueda,
+	// franja de la marca, costuras de puertas y manillas; el furgón recibe su propio detalle más abajo
+	if ( cabSpec.style === 'reparto' ) {
+
+		const dark = mat( 'trim', { color: C.trim } ), chrome = mat( 'chrome', { color: C.chrome } ), green = mat( 'green', { color: C.green } ), amber = mat( 'amber', { color: C.amber, emissive: C.amber, emissiveIntensity: 0.3 } );
+		const base = 0.95; // piso de la cabina
+		// parabrisas inclinado, sobre el frente plano
+		const wind = box( W - 0.3, 1.05, 0.05, glass, 0, cabY( cabTop - 0.62 ), cabZ( zFront - 0.06 ) );
+		wind.rotation.x = 0.16;
+		exterior.add( wind );
+		// frente: parrilla negra con tres barras cromadas, parachoques gris oscuro, focos y señalizadores
+		exterior.add( box( W - 0.5, 0.42, 0.06, dark, 0, cabY( base + 0.68 ), cabZ( zFront - 0.02 ) ) );
+		for ( let k = 0; k < 3; k ++ ) exterior.add( box( W - 0.6, 0.03, 0.08, chrome, 0, cabY( base + 0.55 + k * 0.13 ), cabZ( zFront - 0.03 ) ) );
+		exterior.add( box( W + 0.06, 0.34, 0.26, dark, 0, cabY( base + 0.24 ), cabZ( zFront + 0.06 ) ) );
+		for ( const s of [ - 1, 1 ] ) {
+
+			exterior.add( box( 0.34, 0.2, 0.06, lamp, s * ( W / 2 - 0.3 ), cabY( base + 0.9 ), cabZ( zFront - 0.025 ) ) );
+			exterior.add( box( 0.16, 0.1, 0.06, amber, s * ( W / 2 - 0.62 ), cabY( base + 0.9 ), cabZ( zFront - 0.025 ) ) );
+			// pasos de rueda delanteros y costuras de puerta
+			exterior.add( box( 0.12, 0.6, 1.1, dark, s * ( W / 2 - 0.02 ), cabY( base + 0.3 ), cabZ( zFront + 0.9 ) ) );
+			exterior.add( box( 0.03, cabTop - base - 0.5, 0.04, dark, s * ( W / 2 + 0.005 ), cabY( ( cabTop + base - 0.5 ) / 2 ), cabZ( zFront + cabLen - 0.08 ) ) );
+			exterior.add( box( 0.04, 0.04, 0.22, chrome, s * ( W / 2 + 0.02 ), cabY( base + 0.9 ), cabZ( zFront + cabLen - 0.4 ) ) );
+			// franja verde de la marca a media altura, en ambos costados y el frente
+			exterior.add( box( 0.03, 0.14, cabLen - 0.1, green, s * ( W / 2 + 0.005 ), cabY( base + 1.12 ), cabZ( zFront + cabLen / 2 ) ) );
+
+		}
+
+		exterior.add( box( W - 0.4, 0.14, 0.03, green, 0, cabY( base + 1.12 ), cabZ( zFront - 0.015 ) ) );
+		// señal de techo (tres luces de posición ámbar)
+		for ( const x of [ - 0.3, 0, 0.3 ] ) exterior.add( box( 0.12, 0.06, 0.08, amber, x, cabY( cabTop + 0.02 ), cabZ( zFront + 0.15 ) ) );
+
+	}
+
 	// ruedas del tracto
 	for ( const s of [ - 1, 1 ] ) {
 
@@ -241,6 +275,38 @@ export function createTruckModel( spec, name = 'Ruta Sur' ) {
 		tractor.add( b );
 		const red = mat( 'lampRed', { color: C.lampRed, emissive: C.lampRed, emissiveIntensity: 0.35 } );
 		tractor.add( box( 0.3, 0.12, 0.05, red, - W / 2 + 0.3, 1.0, z1 + 0.01 ), box( 0.3, 0.12, 0.05, red, W / 2 - 0.3, 1.0, z1 + 0.01 ) );
+		if ( cabSpec.style === 'reparto' ) {
+
+			// furgón: esquineros, cortina trasera con sus líneas, parachoques con peldaño, pisaderas,
+			// guardafangos, estanque y escape; la franja verde sigue por el furgón
+			const dark = mat( 'trim', { color: C.trim } ), chrome = mat( 'chrome', { color: C.chrome } ), green = mat( 'green', { color: C.green } ), amber = mat( 'amber', { color: C.amber, emissive: C.amber, emissiveIntensity: 0.3 } );
+			const y0 = 1.1, top = y0 + bh, len = z1 - z0;
+			for ( const s of [ - 1, 1 ] ) {
+
+				tractor.add( box( 0.06, bh, 0.06, dark, s * ( W / 2 - 0.02 ), y0 + bh / 2, z0 + 0.03 ), box( 0.06, bh, 0.06, dark, s * ( W / 2 - 0.02 ), y0 + bh / 2, z1 - 0.03 ) );
+				tractor.add( box( 0.03, 0.14, len - 0.3, green, s * ( W / 2 + 0.005 ), y0 + 0.97, ( z0 + z1 ) / 2 ) );
+				// guardafangos y pisadera
+				tractor.add( box( 0.4, 0.06, 1.5, dark, s * ( tr.track / 2 + 0.1 ), 2 * R + 0.12, 0 ) );
+				tractor.add( box( 0.5, 0.05, 0.9, dark, s * ( W / 2 - 0.15 ), y0 - 0.25, ( z0 + z1 ) / 2 - 1.2 ) );
+				// luces traseras: roja, ámbar y de retroceso
+				tractor.add( box( 0.14, 0.12, 0.05, amber, s * ( W / 2 - 0.55 ), 1.0, z1 + 0.01 ), box( 0.14, 0.12, 0.05, lamp, s * ( W / 2 - 0.72 ), 1.0, z1 + 0.01 ) );
+
+			}
+
+			// cortina trasera: líneas horizontales
+			for ( let y = y0 + 0.3; y < top - 0.1; y += 0.3 ) tractor.add( box( W - 0.2, 0.02, 0.02, dark, 0, y, z1 + 0.01 ) );
+			tractor.add( box( W - 0.16, 0.06, 0.04, dark, 0, top - 0.04, z1 + 0.01 ) );
+			// parachoques trasero con peldaño y barra antiempotramiento
+			tractor.add( box( W - 0.2, 0.14, 0.12, dark, 0, 0.72, z1 - 0.02 ), box( W - 0.6, 0.06, 0.4, chrome, 0, 0.78, z1 - 0.25 ) );
+			// estanque y escape
+			const tank = new THREE.Mesh( new THREE.CylinderGeometry( 0.22, 0.22, 0.9, 12 ), chrome );
+			tank.rotation.x = Math.PI / 2; tank.position.set( W / 2 - 0.28, 0.62, - L * 0.25 );
+			tractor.add( tank );
+			const pipe = new THREE.Mesh( new THREE.CylinderGeometry( 0.05, 0.05, 1.2, 8 ), dark );
+			pipe.rotation.x = Math.PI / 2; pipe.position.set( - W / 2 + 0.35, 0.42, z1 - 0.7 );
+			tractor.add( pipe );
+
+		}
 
 	}
 

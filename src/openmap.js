@@ -35,6 +35,14 @@ export const ROAD_WIDTH = {
 };
 const SIDEWALK = 1.6; // ancho de vereda a cada lado [m]
 
+const WHITE = [ 0.92, 0.92, 0.9 ]; // pintura de calzada: pasos de cebra, líneas de borde y de detención
+// Cuadrilátero plano que mira hacia arriba, cualquiera sea el orden en que vengan sus esquinas
+function quadUp( mb, a, b, c, d ) {
+
+	const P = mb.p, ux = P[ b * 3 ] - P[ a * 3 ], uz = P[ b * 3 + 2 ] - P[ a * 3 + 2 ], vx = P[ c * 3 ] - P[ a * 3 ], vz = P[ c * 3 + 2 ] - P[ a * 3 + 2 ];
+	if ( uz * vx - ux * vz > 0 ) mb.quad( a, b, c, d ); else mb.quad( a, d, c, b );
+
+}
 const COLORS = {
 	road: [ 0.25, 0.25, 0.27 ], sidewalk: [ 0.6, 0.59, 0.57 ], line: [ 0.8, 0.78, 0.64 ],
 	ground: [ 0.46, 0.49, 0.36 ], green: [ 0.34, 0.5, 0.27 ], water: [ 0.3, 0.45, 0.58 ],
@@ -425,7 +433,7 @@ export function buildOpenChunk( city, i, j ) {
 	const solid = new MeshBuilder(), sign = new MeshBuilder();
 	const entry = ( city.index || chunkIndex( city, size ) ).get( key( i, j ) ) || { segments: [], buildings: [], greens: [], trees: [], crossings: [] };
 	const objects = [];                 // { kind, x, z } de cada pieza puesta, para las pruebas y el minimapa
-	const counts = { poles: 0, parked: 0, stops: 0, signs: 0, lights: 0, benches: 0 };
+	const counts = { poles: 0, parked: 0, stops: 0, signs: 0, lights: 0, benches: 0, crosswalks: 0 };
 	const signalLamps = [];             // { key, group, lamp, v0, v1 }: lámparas de semáforo en la capa glow, por cruce y grupo
 	const within = ( x, z ) => x >= x0 && x < x1 && z >= z0 && z < z1;
 
@@ -588,6 +596,16 @@ export function buildOpenChunk( city, i, j ) {
 
 		if ( ! major ) continue; // desde aquí, solo vías principales (terciarias y mayores)
 
+		// líneas de borde continuas a cada lado de la calzada (v fijo dentro de la franja opaca de la textura)
+		for ( const side of [ - 1, 1 ] ) {
+
+			const off = w.width / 2 - 0.25, hw = 0.06;
+			const a = line.vertex( p.x + nx * ( off - hw ) * side, 0.03, p.z + nz * ( off - hw ) * side, WHITE, 1, 0, 0.2 ), b = line.vertex( q.x + nx * ( off - hw ) * side, 0.03, q.z + nz * ( off - hw ) * side, WHITE, 1, 0, 0.2 );
+			const c = line.vertex( q.x + nx * ( off + hw ) * side, 0.03, q.z + nz * ( off + hw ) * side, WHITE, 1, 1, 0.2 ), d = line.vertex( p.x + nx * ( off + hw ) * side, 0.03, p.z + nz * ( off + hw ) * side, WHITE, 1, 1, 0.2 );
+			quadUp( line, a, b, c, d );
+
+		}
+
 		// faroles
 		for ( let t = Math.ceil( ( a0 + 3 ) / LAMP_SPACING ) * LAMP_SPACING; t < a1 - 2; t += LAMP_SPACING ) {
 
@@ -640,6 +658,28 @@ export function buildOpenChunk( city, i, j ) {
 
 	}
 
+	// Pintura de un cruce para quien llega por la aproximación `a` (u apunta desde el cruce hacia afuera):
+	// paso de cebra a `dist` del centro (franjas de medio metro paralelas a la vía, con la textura de
+	// guiones a través) y línea de detención después, sobre el carril de quien llega (la mitad derecha
+	// en una calle de dos sentidos, todo el ancho en una de uno)
+	const paintApproach = ( c, a, dist, twoWay ) => {
+
+		const ux = a.ux, uz = a.uz, rx = uz, rz = - ux; // derecha de quien llega (viene en el sentido -u)
+		const cx = c.x + ux * dist, cz = c.z + uz * dist;
+		if ( ! within( cx, cz ) ) return false;
+		const hw = a.width / 2 - 0.3, dz = 1.2;
+		const Z = ( s, t, v ) => line.vertex( cx + ux * t + rx * s, 0.035, cz + uz * t + rz * s, WHITE, 1, 0.5, v );
+		// cebra: v cruza la calzada de 0 a ancho / 1 m, así alterna medio metro pintado y medio sin pintar
+		const z0 = Z( - hw, - dz, 0 ), z1 = Z( - hw, dz, 0 ), z2 = Z( hw, dz, 2 * hw ), z3 = Z( hw, - dz, 2 * hw );
+		quadUp( line, z0, z1, z2, z3 );
+		// línea de detención: 0,4 m, a 1 m de la cebra
+		const s0 = twoWay ? 0 : - hw, s1 = hw, t0 = dz + 1.0, t1 = dz + 1.4;
+		const l0 = Z( s0, t0, 0.2 ), l1 = Z( s0, t1, 0.2 ), l2 = Z( s1, t1, 0.2 ), l3 = Z( s1, t0, 0.2 );
+		quadUp( line, l0, l1, l2, l3 );
+		return true;
+
+	};
+
 	// cruces: semáforos donde se encuentran dos vías principales; discos Pare donde una menor llega a una principal
 	for ( const ci of entry.crossings || [] ) {
 
@@ -652,6 +692,7 @@ export function buildOpenChunk( city, i, j ) {
 			// las vías se reparten en dos grupos por su orientación: las que van más de este a oeste
 			// parten en verde (grupo 0), las que van más de norte a sur en rojo (el mismo convenio que signals.js)
 			const ckey = `${ Math.round( c.x * 5 ) },${ Math.round( c.z * 5 ) }`;
+			for ( const a of c.approaches ) { const other = Math.max( ...c.approaches.filter( b => b.wi !== a.wi ).map( b => b.width ) ); if ( paintApproach( c, a, other / 2 + 2.0, city.ways[ a.wi ].line ) ) counts.crosswalks ++; }
 			for ( const a of majors ) {
 
 				// esquina derecha de quien llega por esta aproximación (viene en el sentido -u)
@@ -670,6 +711,8 @@ export function buildOpenChunk( city, i, j ) {
 		} else if ( majors.length > 0 ) {
 
 			for ( const a of minors ) {
+
+				if ( paintApproach( c, a, widest / 2 + 2.0, city.ways[ a.wi ].line ) ) counts.crosswalks ++;
 
 				const x = c.x + a.ux * ( widest / 2 + SIDEWALK + 1.5 ) + a.uz * ( a.width / 2 + 0.45 );
 				const z = c.z + a.uz * ( widest / 2 + SIDEWALK + 1.5 ) - a.ux * ( a.width / 2 + 0.45 );
