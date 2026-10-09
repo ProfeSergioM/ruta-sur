@@ -10,6 +10,7 @@
 // probarla sola: `Traffic` mueve los vehículos; `TrafficView` los dibuja.
 
 import * as THREE from 'three';
+import { createFiat600Prop, fiat600CenterZ } from './fiat600.js';
 import { MeshBuilder } from './testcity.js';
 import { hitchXZ, trailerAxleXZ } from './physics.js';
 import { forSegmentsIn } from './osm.js';
@@ -18,8 +19,12 @@ export const KINDS = {
 	auto: { length: 4.3, width: 1.75, height: 1.45, mass: 1300, vMax: 15, accel: 2.2, brake: 5.5, cabin: 0.45 },
 	camioneta: { length: 5.2, width: 1.9, height: 1.8, mass: 2200, vMax: 14, accel: 1.8, brake: 5, cabin: 0.5 },
 	micro: { length: 11, width: 2.5, height: 3.1, mass: 11000, vMax: 12, accel: 1, brake: 3.5, cabin: 0 },
+	// un Fiat 600 de época: chico, liviano y lento; se dibuja con el modelo del auto (fiat600.js)
+	fiat600: { length: 3.3, width: 1.38, height: 1.4, mass: 600, vMax: 13, accel: 1.4, brake: 5, cabin: 0.45 },
 };
-const KIND_WEIGHTS = [ [ 'auto', 0.7 ], [ 'camioneta', 0.22 ], [ 'micro', 0.08 ] ];
+const KIND_WEIGHTS = [ [ 'auto', 0.56 ], [ 'fiat600', 0.14 ], [ 'camioneta', 0.22 ], [ 'micro', 0.08 ] ];
+// colores de los Fiat del tráfico: tonos de época (sRGB, los mismos del selector del menú)
+const FIAT_COLORS = [ 0x92b1ba, 0xe6dcc0, 0xa4c2a0, 0x9aa0a0, 0xb93a2e, 0x22364f, 0xeeede6, 0x131416 ];
 export const PALETTE = [ [ 0.85, 0.85, 0.87 ], [ 0.2, 0.22, 0.25 ], [ 0.6, 0.62, 0.65 ], [ 0.55, 0.1, 0.1 ], [ 0.15, 0.25, 0.5 ], [ 0.75, 0.73, 0.68 ], [ 0.2, 0.4, 0.3 ], [ 0.8, 0.55, 0.15 ] ];
 const MICRO_COLORS = [ [ 0.95, 0.95, 0.95 ], [ 0.1, 0.45, 0.3 ], [ 0.85, 0.5, 0.1 ] ];
 
@@ -217,7 +222,8 @@ export class Traffic {
 			if ( kind === 'micro' && w.rank > 4 ) kind = 'auto';
 			const K = KINDS[ kind ];
 			const color = kind === 'micro' ? MICRO_COLORS[ Math.floor( this.rng() * MICRO_COLORS.length ) ] : PALETTE[ Math.floor( this.rng() * PALETTE.length ) ];
-			const v = { id: this.spawned ++, kind, K, color, x: 0, z: 0, y: 0, yaw: 0, v: Math.min( K.vMax, w.maxspeed / 3.6 ) * 0.7, stun: 0, hit: 0, hitCool: 0, since: 0, stopWait: 0, passedNode: - 1, groundT: this.rng() * 0.3, mesh: null, half: K.length / 2, halfW: K.width / 2, brakingFor: 0 };
+			const paint = FIAT_COLORS[ Math.floor( this.rng() * FIAT_COLORS.length ) ];
+			const v = { id: this.spawned ++, kind, K, color, paint, x: 0, z: 0, y: 0, yaw: 0, v: Math.min( K.vMax, w.maxspeed / 3.6 ) * 0.7, stun: 0, hit: 0, hitCool: 0, since: 0, stopWait: 0, passedNode: - 1, groundT: this.rng() * 0.3, mesh: null, half: K.length / 2, halfW: K.width / 2, brakingFor: 0 };
 			this._place( v, e, s );
 			if ( this.groundAt ) { const gy = this.groundAt( v.x, v.z ); v.y = gy === null ? 0 : gy; }
 			this.vehicles.push( v );
@@ -573,9 +579,11 @@ function lightsGeometry( kind ) {
 
 export class TrafficView {
 
-	constructor( scene, traffic ) {
+	// fiat: función que devuelve los recursos del Fiat 600 (loadFiat600) cuando ya están, o null;
+	// mientras no estén, un Fiat se dibuja como un auto cualquiera
+	constructor( scene, traffic, { fiat = () => null } = {} ) {
 
-		this.scene = scene; this.traffic = traffic;
+		this.scene = scene; this.traffic = traffic; this.fiat = fiat;
 		this.group = new THREE.Group(); this.group.name = 'Tráfico';
 		scene.add( this.group );
 		this.bodyMat = new THREE.MeshLambertMaterial( { vertexColors: true } );
@@ -589,17 +597,40 @@ export class TrafficView {
 	// De noche las luces brillan y la carrocería se oscurece con la luz de la escena
 	setNight( lamps ) { this.lights = lamps; this.lightMat.color.setScalar( 0.35 + 0.65 * lamps ); }
 
-	_remove( v ) { if ( v.mesh ) { this.group.remove( v.mesh ); v.mesh = null; } }
+	_remove( v ) {
+
+		if ( v.mesh ) { this.group.remove( v.mesh ); v.mesh = null; }
+		if ( v.prop ) { v.prop.dispose(); v.prop = null; }
+
+	}
 
 	update() {
 
 		for ( const v of this.traffic.vehicles ) {
 
+			if ( v.kind === 'fiat600' && ! v.prop ) {
+
+				const assets = this.fiat();
+				if ( assets ) {
+
+					// el origen del modelo está bajo el eje trasero; el del tráfico, en el centro de la planta
+					if ( v.mesh ) { this.group.remove( v.mesh ); v.mesh = null; }
+					v.prop = createFiat600Prop( assets, { paint: v.paint } );
+					v.prop.object.position.z = - fiat600CenterZ( assets );
+					v.prop.object.traverse( o => { if ( o.isMesh && o.material && ! o.material.transparent ) o.castShadow = true; } );
+					const m = new THREE.Group();
+					m.add( v.prop.object );
+					v.mesh = m; this.group.add( m );
+
+				}
+
+			}
+
 			if ( ! v.mesh ) {
 
-				const m = new THREE.Mesh( bodyGeometry( v.kind, v.color ), this.bodyMat );
+				const m = new THREE.Mesh( bodyGeometry( v.kind === 'fiat600' ? 'auto' : v.kind, v.color ), this.bodyMat );
 				m.castShadow = true;
-				m.add( new THREE.Mesh( lightsGeometry( v.kind ), this.lightMat ) );
+				m.add( new THREE.Mesh( lightsGeometry( v.kind === 'fiat600' ? 'auto' : v.kind ), this.lightMat ) );
 				v.mesh = m; this.group.add( m );
 
 			}

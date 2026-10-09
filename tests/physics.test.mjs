@@ -887,6 +887,72 @@ function scripted( dt ) {
 
 }
 
+// === 16. Fiat 600 D: un auto chico con el mismo modelo ======================
+// Las cifras publicadas que se contrastan: 29 CV a 4800 rpm, 110 km/h de velocidad máxima,
+// 4,6 m de radio de giro (ver README). Las demás son de plausibilidad.
+{
+
+	const F = VEHICLES.fiat600;
+	const empty = accelTimes( F, 0 ), full = accelTimes( F, F.maxCargo );
+	info( 'Fiat 600 vacío: masa', empty.mass, ' kg' );
+	within( 'Fiat 600 vacío: 0 a 50 km/h', empty.t50, 4, 12, ' s' );
+	within( 'Fiat 600 vacío: 0 a 80 km/h', empty.t80, 10, 30, ' s' );
+	within( 'Fiat 600 con 320 kg: 0 a 80 km/h', full.t80, 14, 45, ' s' );
+	check( 'Fiat 600: velocidad máxima (limitador propio, 110 km/h)', empty.vmax, 110, 1.5, ' km/h' );
+	within( 'Fiat 600: régimen a 110 km/h en 4.ª', empty.rpm, 4500, 4900, ' rpm' );
+	within( 'Fiat 600: aceleración máxima', empty.aMax, 2.0, 5.5, ' m/s²' );
+	within( 'Fiat 600: cambios hasta la velocidad máxima (tres, de 1.ª a 4.ª)', empty.shifts, 3, 3 );
+	const b50 = brakeDistance( F, 0, 50 );
+	const ideal = ( 50 / 3.6 ) ** 2 / ( 2 * F.brakeDecel );
+	within( 'Fiat 600: frenado desde 50 km/h', b50.d, ideal, ideal + 3, ' m' );
+	// la curva de par: sube hasta el codo y alcanza la potencia máxima antes del corte
+	within( 'Fiat 600: par a ralentí respecto del máximo', engineTorque( F.engine, F.engine.idle ) / F.engine.torque, 0.5, 0.6 );
+	check( 'Fiat 600: par máximo en el codo', engineTorque( F.engine, F.engine.knee ), F.engine.torque, 1e-9, ' N·m' );
+	within( 'Fiat 600: potencia al régimen de potencia máxima', engineTorque( F.engine, F.engine.powerEnd ) * F.engine.powerEnd * Math.PI / 30 / 1000, 20.5, 21.5, ' kW' );
+	// barrido de pendientes: la caja no oscila
+	let runs = 0, hunting = 0;
+	for ( const load of [ 0, 1 ] ) for ( const grade of [ 0, 0.04, 0.08, 0.12, 0.18 ] ) for ( const thr of [ 0.3, 0.6, 1 ] ) {
+
+		const t = createTruck( F, { cargoMass: F.maxCargo * load } );
+		const terr = slope( grade );
+		placeTruck( t, 0, 0, 0, terr );
+		let shifts = 0;
+		run( t, { accel: thr, decel: 0, steer: 0 }, terr, 150, ( time, ev ) => { if ( time > 75 && ev.shift ) shifts ++; } );
+		runs ++;
+		if ( shifts >= 3 ) hunting ++;
+
+	}
+
+	info( 'Fiat 600, barrido de pendientes: combinaciones de carga, pendiente y pedal', runs );
+	within( 'Fiat 600, barrido: combinaciones con la caja oscilando', hunting, 0, 0 );
+	// subida de 10 % a plena carga: sostiene una velocidad razonable sin cambiar
+	const t = createTruck( F, { cargoMass: F.maxCargo } );
+	const terr = slope( 0.10 );
+	placeTruck( t, 0, 0, 0, terr );
+	let z60 = 0, shifts = 0;
+	run( t, { accel: 1, decel: 0, steer: 0 }, terr, 150, ( time, ev ) => { if ( Math.abs( time - 60 ) < DT / 2 ) z60 = t.z; if ( time > 60 && ev.shift ) shifts ++; } );
+	within( 'Fiat 600 cargado en subida de 10 %: velocidad media sostenida', ( z60 - t.z ) / 90 * 3.6, 40, 75, ' km/h' );
+	within( 'Fiat 600 cargado en subida de 10 %: cambios tras el primer minuto', shifts, 0, 0 );
+	// reversa cuesta abajo: la retención del motor limita la velocidad
+	const r = createTruck( F, { cargoMass: 0 } );
+	const down = slope( 0.08 );
+	placeTruck( r, 0, 0, 0, down );
+	let vmin = 0, rpmMax = 0;
+	run( r, { accel: 0, decel: 1, steer: 0 }, down, 60, () => { vmin = Math.min( vmin, r.v ); rpmMax = Math.max( rpmMax, r.rpm ); } );
+	const vRed = F.engine.redline * Math.PI / 30 / ( F.engine.reverse * F.engine.final ) * F.engine.wheelRadius;
+	within( 'Fiat 600, reversa cuesta abajo: velocidad máxima', - vmin * 3.6, 3, vRed * 3.6 * 1.25, ' km/h' );
+	// radio de giro: con la rueda al tope y despacio, la rueda delantera exterior describe el radio publicado (4,6 m)
+	const k = createTruck( F );
+	placeTruck( k, 0, 0, 0, flat );
+	const pts = [];
+	run( k, { accel: 0, decel: 0, steer: 1 }, flat, 60, time => { k.v = 1.5; if ( time > 25 ) pts.push( [ k.x, k.z, k.yaw ] ); } );
+	const tr = F.tractor, outer = pts.map( ( [ x, z, yaw ] ) => [ x - Math.sin( yaw ) * tr.wheelbase + Math.cos( yaw ) * tr.track / 2, z - Math.cos( yaw ) * tr.wheelbase - Math.sin( yaw ) * tr.track / 2 ] );
+	const xs = outer.map( p => p[ 0 ] ), zs = outer.map( p => p[ 1 ] );
+	info( 'Fiat 600: velocidad en el giro de prueba', k.v * 3.6, ' km/h' );
+	check( 'Fiat 600: radio de giro de la rueda delantera exterior', ( Math.max( ...xs ) - Math.min( ...xs ) + Math.max( ...zs ) - Math.min( ...zs ) ) / 4, 4.6, 0.25, ' m' );
+
+}
+
 // --- informe ----------------------------------------------------------------
 const w = Math.max( ...rows.map( r => r[ 1 ].length ) );
 for ( const r of rows ) console.log( `${ r[ 0 ] }  ${ r[ 1 ].padEnd( w ) }  ${ r[ 2 ].padStart( 12 ) }   ${ r[ 3 ] }` );

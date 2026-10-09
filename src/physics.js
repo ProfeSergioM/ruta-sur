@@ -120,7 +120,57 @@ export const VEHICLES = {
 		},
 		maxCargo: 4500,
 	},
+	// Un auto de época, con el motor atrás. Las fuentes de cada valor, y cuáles son supuestos, están en el README.
+	fiat600: {
+		id: 'fiat600',
+		label: 'Fiat 600 D',
+		tractor: {
+			wheelbase: 2.0,        // distancia entre ejes [m]
+			frontOverhang: 0.545,  // del eje delantero al parachoques [m]
+			rearOverhang: 0.75,    // del eje trasero al parachoques [m]
+			width: 1.38,
+			track: 1.15,           // trocha delantera; la trasera mide 1,16 [m]
+			hitch: 0,
+			mass: 580,             // en orden de marcha [kg]
+			maxSteer: 0.51,        // ángulo máximo de rueda [rad], del radio de giro de 4,6 m
+		},
+		trailer: null,
+		engine: {
+			power: 21.3e3,         // 29 CV a 4800 rpm [W]
+			torque: 54,            // 5,5 kgm a 2800 rpm [N·m]
+			knee: 2400,            // un motor chico a gasolina: el par crece con las vueltas hasta cerca de su máximo
+			idle: 850, powerEnd: 4800, redline: 5200,
+			drag: 10,              // par de retención a 2000 rpm [N·m]
+			gears: [ 3.385, 2.055, 1.333, 0.896 ],
+			reverse: 4.275,
+			final: 4.875,
+			wheelRadius: 0.27,     // neumático 5.20-12, radio bajo carga [m]
+			efficiency: 0.9,
+			upLo: 2600, upHi: 4300, down: 1400,
+			driveAxleMax: 540,     // carga máxima sobre el eje trasero, que es el motriz [kg]
+		},
+		maxCargo: 320,             // carga útil [kg]
+		// Encargos a la medida del auto: masas en toneladas, con el mismo formato de CARGAS
+		cargas: [
+			{ nombre: 'Encomiendas', masa: [ 0.04, 0.18 ], tarifa: 1.0 },
+			{ nombre: 'Pan recién horneado', masa: [ 0.03, 0.12 ], tarifa: 1.1 },
+			{ nombre: 'Repuestos', masa: [ 0.05, 0.22 ], tarifa: 1.15 },
+			{ nombre: 'Documentos', masa: [ 0.005, 0.03 ], tarifa: 1.25 },
+			{ nombre: 'Flores', masa: [ 0.02, 0.09 ], tarifa: 1.2 },
+			{ nombre: 'Verduras de la feria', masa: [ 0.08, 0.28 ], tarifa: 0.95 },
+		],
+		// Lo que los camiones toman de PARAMS y el auto trae propio
+		cdA: 1.0,                  // Cd·A [m²], ajustado para llegar a unos 110 km/h
+		speedLimit: 110 / 3.6,     // velocidad máxima [m/s]
+		aLatMax: 3.2,              // aceleración lateral admitida al girar [m/s²]
+		brakeDecel: 6.5,           // frenada máxima [m/s²]
+		cylinders: 4, turbo: false, // para el sonido del motor
+		camera: { back: 6.4, height: 2.3, lookAhead: 1.3, lookHeight: 0.95, top: 26 },   // cámara exterior y cenital [m]
+	},
 };
+
+// Parámetros que un vehículo puede traer propios; si no, valen los comunes
+export const paramOf = ( spec, name ) => ( spec && spec[ name ] !== undefined ? spec[ name ] : PARAMS[ name ] );
 
 // Parámetros comunes
 export const PARAMS = {
@@ -174,14 +224,16 @@ export function totalMass( t ) {
 
 }
 
-const TORQUE_KNEE = 1000; // régimen desde el que el motor entrega su par máximo [rpm]
+const TORQUE_KNEE = 1000; // régimen desde el que un motor diésel entrega su par máximo [rpm]; `engine.knee` lo cambia
+const kneeOf = e => e.knee || TORQUE_KNEE;
 
 // Par del motor a plena carga [N·m]
 export function engineTorque( e, rpm ) {
 
 	const rpmP = ( e.power / e.torque ) / RPM_TO_RAD; // donde empieza la potencia constante
+	const knee = kneeOf( e );
 	if ( rpm <= e.idle ) return e.torque * 0.55;
-	if ( rpm < TORQUE_KNEE ) return e.torque * ( 0.55 + 0.45 * ( rpm - e.idle ) / ( TORQUE_KNEE - e.idle ) );
+	if ( rpm < knee ) return e.torque * ( 0.55 + 0.45 * ( rpm - e.idle ) / ( knee - e.idle ) );
 	if ( rpm <= rpmP ) return e.torque;
 	if ( rpm <= e.powerEnd ) return e.power / ( rpm * RPM_TO_RAD );
 	if ( rpm < e.redline ) {
@@ -630,7 +682,7 @@ function sustains( t, e, gear, v, m, reserve = PARAMS.shiftReserve, minRpm = 0 )
 	const rpm = Math.max( e.idle, rpmW );
 	const driveLoad = Math.min( e.driveAxleMax, 0.3 * m + 2000 );
 	const force = Math.min( t.throttle * engineTorque( e, rpm ) * ratio * e.efficiency / e.wheelRadius, PARAMS.mu * driveLoad * G );
-	const acc = force / m + t.gradeAcc - PARAMS.crr * G - 0.5 * PARAMS.rho * PARAMS.cdA * v * v / m;
+	const acc = force / m + t.gradeAcc - PARAMS.crr * G - 0.5 * PARAMS.rho * paramOf( t.spec, 'cdA' ) * v * v / m;
 	return acc >= reserve;
 
 }
@@ -929,7 +981,7 @@ export function stepTruck( t, input, terrain, dt, opts = {} ) {
 	// mientras se espera el cambio de sentido, el pedal contrario frena
 	if ( stopped && t.dirHold > 0 ) { thrIn = 0; brkIn = Math.max( brkIn, 0.3 ); }
 	if ( input.handbrake ) { brkIn = 1; thrIn = 0; }
-	if ( t.v * t.dir > PARAMS.speedLimit ) thrIn = 0;
+	if ( t.v * t.dir > paramOf( t.spec, 'speedLimit' ) ) thrIn = 0;
 	if ( t.jackknife && t.dir < 0 ) thrIn = 0;
 
 	t.throttle += clamp( thrIn - t.throttle, - dt / 0.12, dt / 0.25 );
@@ -987,7 +1039,7 @@ export function stepTruck( t, input, terrain, dt, opts = {} ) {
 				// Una marcha más alta solo sirve si, con este mismo pedal, el motor
 				// sostiene la carga después del cambio. Sin esta condición, en una
 				// subida la caja sube, pierde velocidad, baja y vuelve a subir.
-				const coast = t.gradeAcc - PARAMS.crr * G - 0.5 * PARAMS.rho * PARAMS.cdA * speedAlong * speedAlong / m;
+				const coast = t.gradeAcc - PARAMS.crr * G - 0.5 * PARAMS.rho * paramOf( t.spec, 'cdA' ) * speedAlong * speedAlong / m;
 				const vAfter = Math.max( 0, speedAlong + Math.min( 0, coast ) * PARAMS.shiftTime ); // velocidad al terminar el corte de par
 				const minAfter = e.down + 150 + 250 * t.throttle;
 				for ( let g2 = t.gear + 1; g2 <= nG && g2 - t.gear <= 3; g2 ++ ) {
@@ -996,7 +1048,7 @@ export function stepTruck( t, input, terrain, dt, opts = {} ) {
 					// Tras el cambio el motor debe quedar sobre el régimen de reducción y en la
 					// zona plana de su curva de par: más abajo el par cae con las vueltas y el
 					// equilibrio es inestable (pierde velocidad, pierde par y termina reduciendo).
-					if ( ! coasting && ! sustains( t, e, g2, vAfter, m, PARAMS.shiftReserve, Math.max( e.down + 60, TORQUE_KNEE + 40 ) ) ) break;
+					if ( ! coasting && ! sustains( t, e, g2, vAfter, m, PARAMS.shiftReserve, Math.max( e.down + 60, kneeOf( e ) + 40 ) ) ) break;
 					target = g2;
 
 				}
@@ -1038,10 +1090,11 @@ export function stepTruck( t, input, terrain, dt, opts = {} ) {
 	// --- 3. Fuerzas longitudinales
 	const vAbs = Math.abs( t.v );
 	const drive = ( t.dir * tractive ) / m + t.gradeAcc;        // aceleración con signo, eje de avance
-	let resist = PARAMS.crr * G + 0.5 * PARAMS.rho * PARAMS.cdA * vAbs * vAbs / m
-		+ t.brake * PARAMS.brakeDecel + engineBrake / m;         // magnitud, se opone al movimiento
+	const speedLimit = paramOf( t.spec, 'speedLimit' );
+	let resist = PARAMS.crr * G + 0.5 * PARAMS.rho * paramOf( t.spec, 'cdA' ) * vAbs * vAbs / m
+		+ t.brake * paramOf( t.spec, 'brakeDecel' ) + engineBrake / m;         // magnitud, se opone al movimiento
 	// Limitador de velocidad con retardador: en una bajada, cortar el acelerador no basta para sostener 90 km/h.
-	if ( speedAlong > PARAMS.speedLimit ) resist += Math.min( PARAMS.retarder, ( speedAlong - PARAMS.speedLimit ) * 1.5 );
+	if ( speedAlong > speedLimit ) resist += Math.min( PARAMS.retarder, ( speedAlong - speedLimit ) * 1.5 );
 	// Sobrerrégimen: si las ruedas arrastran al motor más allá del corte, la compresión lo retiene.
 	// Es también lo que limita la velocidad en reversa, que tiene una sola marcha.
 	if ( t.shiftT <= 0 && rpmWheel > e.redline ) resist += PARAMS.overRev * ( rpmWheel / e.redline - 1 );
@@ -1065,7 +1118,7 @@ export function stepTruck( t, input, terrain, dt, opts = {} ) {
 
 	// --- 4. Dirección
 	const v2 = Math.max( t.v * t.v, 0.01 );
-	const dMax = Math.min( tr.maxSteer, Math.atan( tr.wheelbase * PARAMS.aLatMax / v2 ) );
+	const dMax = Math.min( tr.maxSteer, Math.atan( tr.wheelbase * paramOf( t.spec, 'aLatMax' ) / v2 ) );
 	const target = clamp( input.steer || 0, - 1, 1 ) * dMax;
 	let rate = Math.abs( target ) < Math.abs( t.steer ) ? PARAMS.steerReturn : PARAMS.steerRate;
 	if ( input.analog ) rate = 2.5;

@@ -81,9 +81,10 @@ const traffic = await page.evaluate( () => {
 
 	const g = window.__rutaSur, T = g.traffic, t = g.truck;
 	g.trafficOn = true; T.enabled = true; T.count = 12;
-	g.advance( 3, { decel: 1 } );
+	// el camión queda quieto con el freno de mano: con el pedal de freno sostenido, detenido, engancharía la reversa
+	g.advance( 3, { handbrake: true } );
 	const first = T.vehicles.map( v => ( { id: v.id, x: v.x, z: v.z } ) );
-	g.advance( 8, { decel: 1 } );
+	g.advance( 8, { handbrake: true } );
 	const moved = T.vehicles.filter( v => { const f = first.find( p => p.id === v.id ); return f && Math.hypot( v.x - f.x, v.z - f.z ) > 10; } ).length;
 	const P = g.peds; P.enabled = true; P.count = 12; g.advance( 45, {} ); // en 45 s a paso de persona alguno llega a una esquina y dobla
 	return { n: T.vehicles.length, first: first.length, moved, hits: T.hits, minDist: Math.min( ...T.vehicles.map( v => Math.hypot( v.x - t.x, v.z - t.z ) ) ), peds: P.list.length, pedMeshes: g.pedView.group.children.length, pedCrossings: P.crossings, pedHits: P.hits };
@@ -252,7 +253,9 @@ R.check( 'Hay un semáforo con una avenida que entra, y el camión se deja antes
 if ( redLight.found && redLight.placed ) R.check( 'Pasar con luz roja cuesta una multa, una sola vez', redLight.fines === 1 && /luz roja/.test( redLight.toast ) && redLight.passed < 0, `${ redLight.toast || 'sin aviso' }; esperó ${ redLight.waited } s el rojo; cruce ${ ( - redLight.passed ).toFixed( 0 ) } m atrás` );
 
 // --- día y noche: la hora avanza con el juego, T la adelanta y de noche se encienden las luces
-await page.evaluate( () => { window.__rutaSur.hour = 17.3; } ); await sleep( page, 300 ); // la hora de partida, descontado lo que el piloto y el tráfico avanzaron
+await page.evaluate( () => { window.__rutaSur.hour = 17.3; } ); // la hora de partida, descontado lo que el piloto y el tráfico avanzaron
+// el reloj se actualiza con el cuadro siguiente, que dibujando por software puede tardar más de un segundo
+await page.waitForFunction( () => /^17:/.test( document.getElementById( 'reloj' ).textContent ), null, { timeout: 20000 } ).catch( () => {} );
 const day = await page.evaluate( () => { const g = window.__rutaSur, M = g.world.materials; return { hour: g.hour, clock: document.getElementById( 'reloj' ).textContent, lamps: g.world.lampsOn, pool: M.pool.visible, tint: M.road.color.r, windows: M.windows.visible }; } );
 R.check( 'La partida empieza a las 17 y el reloj lo muestra', day.hour > 17 && day.hour < 18 && /^17:/.test( day.clock ), `${ day.clock }` );
 R.check( 'De día las luces están apagadas y la ciudad sin tinte', ! day.lamps && ! day.pool && day.tint > 0.9 && ! day.windows, JSON.stringify( day ) );

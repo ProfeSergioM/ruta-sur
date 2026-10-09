@@ -14,7 +14,7 @@
 
 import { ROAD_CLASSES, buildingHeight, featureKind } from './osm.js';
 import { MeshBuilder, valueNoise } from './testcity.js';
-import { utilityPole, parkedCar, busStop, bench, bin, roadSign, trafficLight, SIGNS, CAR_COLORS } from './furniture.js';
+import { utilityPole, parkedCar, parkedFiat, busStop, bench, bin, roadSign, trafficLight, SIGNS, CAR_COLORS, FIAT_PAINTS } from './furniture.js';
 
 export const OPEN = {
 	chunk: 120,          // lado de cada trozo de malla [m]
@@ -53,6 +53,7 @@ export const WINDOW_METERS = { u: 4, v: 3.2 };  // una celda de la textura de fa
 export const GROUND_METERS = 18;                // la textura de pasto se repite cada tantos metros
 const TREE_SPACING = 16, LAMP_SPACING = 34;     // separación de los árboles de vereda y de los faroles [m]
 const POLE_SPACING = 28, PARK_SPACING = 7.5, STOP_SPACING = 110, SIGN_SPACING = 150; // postes, autos estacionados, paraderos y señales de velocidad [m]
+export const FIAT_SHARE = 0.2;   // uno de cada cinco autos estacionados es un Fiat 600
 const MAJOR = 8;                                // desde este ancho de calzada una vía es principal: faroles, estacionados, paraderos, semáforos [m]
 const PALETTE = [ [ 0.72, 0.69, 0.63 ], [ 0.62, 0.6, 0.58 ], [ 0.75, 0.72, 0.7 ], [ 0.58, 0.52, 0.46 ], [ 0.66, 0.68, 0.7 ], [ 0.7, 0.62, 0.55 ], [ 0.52, 0.55, 0.58 ], [ 0.74, 0.66, 0.58 ], [ 0.6, 0.64, 0.6 ] ];
 // la luz viene del mismo lado que el sol del juego (-0.5, 1, 0.35)
@@ -430,10 +431,10 @@ export function buildOpenChunk( city, i, j ) {
 	const size = city.chunk, x0 = i * size, z0 = j * size, x1 = x0 + size, z1 = z0 + size;
 	const mb = new MeshBuilder(), walk = new MeshBuilder(), road = new MeshBuilder(), line = new MeshBuilder();
 	const bld = new MeshBuilder(), park = new MeshBuilder(), decor = new MeshBuilder(), glow = new MeshBuilder(), pool = new MeshBuilder();
-	const solid = new MeshBuilder(), sign = new MeshBuilder();
+	const solid = new MeshBuilder(), sign = new MeshBuilder(), ghost = new MeshBuilder();
 	const entry = ( city.index || chunkIndex( city, size ) ).get( key( i, j ) ) || { segments: [], buildings: [], greens: [], trees: [], crossings: [] };
 	const objects = [];                 // { kind, x, z } de cada pieza puesta, para las pruebas y el minimapa
-	const counts = { poles: 0, parked: 0, stops: 0, signs: 0, lights: 0, benches: 0, crosswalks: 0, infill: 0 };
+	const counts = { poles: 0, parked: 0, fiats: 0, stops: 0, signs: 0, lights: 0, benches: 0, crosswalks: 0, infill: 0 };
 	const signalLamps = [];             // { key, group, lamp, v0, v1 }: lámparas de semáforo en la capa glow, por cruce y grupo
 	const within = ( x, z ) => x >= x0 && x < x1 && z >= z0 && z < z1;
 
@@ -721,8 +722,10 @@ export function buildOpenChunk( city, i, j ) {
 				if ( hashId( seed + 3 ) < 0.45 ) continue;
 				const [ x, z ] = at( t, side, w.width / 2 + 0.3 );
 				if ( ! ok( x, z, 3.6 ) ) continue;
-				parkedCar( solid, x, z, side > 0 ? yawFwd : yawBack, CAR_COLORS[ Math.floor( hashId( seed ) * CAR_COLORS.length ) ], hashId( seed + 1 ) );
-				counts.parked ++; taken.push( [ x, z ] ); objects.push( { kind: 'estacionado', x, z, yaw: side > 0 ? yawFwd : yawBack } );
+				const fiat = hashId( seed + 5 ) < FIAT_SHARE;
+				if ( fiat ) { parkedFiat( solid, ghost, x, z, side > 0 ? yawFwd : yawBack, FIAT_PAINTS[ Math.floor( hashId( seed ) * FIAT_PAINTS.length ) ] ); counts.fiats ++; }
+				else parkedCar( solid, x, z, side > 0 ? yawFwd : yawBack, CAR_COLORS[ Math.floor( hashId( seed ) * CAR_COLORS.length ) ], hashId( seed + 1 ) );
+				counts.parked ++; taken.push( [ x, z ] ); objects.push( { kind: 'estacionado', x, z, yaw: side > 0 ? yawFwd : yawBack, fiat } );
 
 			}
 
@@ -799,12 +802,12 @@ export function buildOpenChunk( city, i, j ) {
 
 	}
 
-	return { ground: mb.finish(), buildings: bld.finish(), park: park.finish(), walk: walk.finish(), road: road.finish(), line: line.finish(), decor: decor.finish(), glow: glow.finish(), pool: pool.finish(), solid: solid.finish(), sign: sign.finish(), trees: count, lamps: lampsOf.length, objects, signalLamps, ...counts };
+	return { ground: mb.finish(), buildings: bld.finish(), park: park.finish(), walk: walk.finish(), road: road.finish(), line: line.finish(), decor: decor.finish(), glow: glow.finish(), pool: pool.finish(), solid: solid.finish(), sign: sign.finish(), ghost: ghost.finish(), trees: count, lamps: lampsOf.length, objects, signalLamps, ...counts };
 
 }
 
-export const LAYERS = [ 'ground', 'buildings', 'park', 'walk', 'road', 'line', 'decor', 'glow', 'pool', 'solid', 'sign' ];
-export const RAY_LAYERS = [ 'ground', 'buildings', 'solid' ]; // las que responden los rayos de la física
+export const LAYERS = [ 'ground', 'buildings', 'park', 'walk', 'road', 'line', 'decor', 'glow', 'pool', 'solid', 'sign', 'ghost' ];
+export const RAY_LAYERS = [ 'ground', 'buildings', 'solid', 'ghost' ]; // las que responden los rayos de la física; `ghost` no se dibuja
 
 // Cerros brumosos en el horizonte: un anillo de lomas con alturas de ruido, decorativo.
 // Tres vueltas de vértices (pie interior, cresta, pie exterior); el color sube del

@@ -6,7 +6,8 @@ import { TestWorld, QUALITY, EMBEDDED, viewBlocks } from './world.js';
 import { OpenWorld } from './openworld.js';
 import { buildGraph, spawnPoint, nearestSegment } from './osm.js';
 import { createTruckModel } from './truck-model.js';
-import { Hud, fmtDist, fmtPesos } from './hud.js';
+import { loadFiat600, createFiat600Model, FIAT600_PAINTS } from './fiat600.js';
+import { Hud, fmtDist, fmtPesos, fmtMass } from './hud.js';
 import { Jobs } from './jobs.js';
 import { Input } from './input.js';
 import { Sound } from './audio.js';
@@ -51,7 +52,7 @@ const store = {
 
 // con pantalla táctil (un teléfono) la calidad parte en baja: sin sombras y con menos tráfico y alcance
 const COARSE = typeof matchMedia === 'function' && matchMedia( '( pointer: coarse )' ).matches;
-const config = Object.assign( { city: 'temuco', coords: '', truck: 'reparto', quality: COARSE ? 'baja' : 'media' }, store.read( 'config', {} ) );
+const config = Object.assign( { city: 'temuco', coords: '', truck: 'reparto', quality: COARSE ? 'baja' : 'media', paint: FIAT600_PAINTS[ 0 ].id }, store.read( 'config', {} ) );
 
 
 function parseCoords( text ) {
@@ -267,6 +268,12 @@ function buildMenu() {
 	if ( ! offered.some( v => v.id === config.truck ) ) config.truck = offered[ 0 ].id;
 	chips( $( 'camiones' ), 'camion', offered.map( v => [ v.id, v.label ] ), config.truck );
 	chips( $( 'calidades' ), 'calidad', Object.entries( QUALITY ).map( ( [ id, q ] ) => [ id, q.label ] ), config.quality );
+	// el color del Fiat: una ficha por tono, con su muestra; solo se ve con el Fiat elegido
+	chips( $( 'pinturas' ), 'pintura', FIAT600_PAINTS.map( p => [ p.id, p.name ] ), config.paint );
+	for ( const p of FIAT600_PAINTS ) { const l = document.getElementById( `pintura-${ p.id }` ).parentElement; l.classList.add( 'muestra' ); l.style.setProperty( '--muestra', p.hex ); }
+	const syncPaint = () => { $( 'colores' ).hidden = selected( 'camion' ) !== 'fiat600'; };
+	$( 'camiones' ).addEventListener( 'change', syncPaint );
+	syncPaint();
 	check( cities, config.city );
 
 	$( 'version' ).textContent = VERSION;
@@ -363,6 +370,7 @@ function startFromMenu( mode ) {
 
 	menuError( '' );
 	config.city = selected( 'ciudad' ); config.truck = selected( 'camion' ); config.quality = selected( 'calidad' );
+	config.paint = selected( 'pintura' ) || config.paint;
 	config.coords = $( 'coordenadas' ).value;
 	store.write( 'config', config );
 
@@ -411,7 +419,22 @@ function start( opts ) {
 	const L = game.load = {
 		phase: 'world', t: 0, wait: 0, hint,
 		spawn: null, ground: null, roads: 'pending', roadsError: null,
+		fiat: game.fiat ? 'ok' : 'pending', fiatError: null,
 	};
+	// El Fiat 600 se decodifica una vez por sesión: lo usa el vehículo elegido y los autos de la calle.
+	// Para los camiones no hay que esperarlo; si falla, la ciudad queda sin Fiats.
+	if ( ! game.fiat ) loadFiat600( { renderer } ).then( assets => {
+
+		game.fiat = assets;
+		if ( _lastDaylight ) assets.setLightLevel( _lastDaylight.level );
+		if ( game.load === L ) L.fiat = 'ok';
+
+	} ).catch( e => {
+
+		console.warn( 'Ruta Sur · Fiat 600:', e && e.message );
+		if ( game.load === L ) { L.fiat = 'failed'; L.fiatError = e; }
+
+	} );
 	game.graph = null;
 	// La respuesta de las calles puede llegar cuando esta carga ya se abandonó y hay
 	// otra en curso: solo vale para la carga que la pidió.
@@ -531,7 +554,14 @@ function loadingStep( dt ) {
 	if ( L.phase === 'place' ) {
 
 		L.wait += dt;
-		text.textContent = 'Estacionando el camión';
+		if ( game.spec.id === 'fiat600' ) {
+
+			if ( L.fiat === 'failed' ) { world.error = `No se pudo preparar el Fiat 600: ${ L.fiatError && L.fiatError.message ? L.fiatError.message : 'error desconocido' }`; return; }
+			if ( L.fiat !== 'ok' ) { text.textContent = 'Sacando el Fiat del garaje'; return; }
+
+		}
+
+		text.textContent = game.spec.trailer ? 'Estacionando el camión' : 'Estacionando el vehículo';
 		if ( ( ! p.ready && L.wait < 8 ) || L.wait < 0.4 ) return;
 		const t = createTruck( game.spec, { cargoMass: 0 } );
 		const g = world.groundAt( L.spawn.x, L.spawn.z );
@@ -562,9 +592,12 @@ function beginDriving( t ) {
 
 	const world = game.world;
 	game.truck = t;
-	game.model = createTruckModel( game.spec );
+	game.model = game.spec.id === 'fiat600'
+		? createFiat600Model( game.spec, game.fiat, { paint: paintHex( config.paint ) } )
+		: createTruckModel( game.spec );
 	game.model.root.traverse( o => { if ( o.isMesh && o.material && ! o.material.transparent ) { o.castShadow = true; o.receiveShadow = true; } } );
 	scene.add( game.model.root );
+	hud.setEngine( game.spec.engine );
 	game.mirrors = new Mirrors( renderer, scene, { width: game.quality.mirror, both: game.quality.mirrorBoth, far: game.quality.far } );
 	game.mirrors.attach( game.model, world, [ $( 'espejo-izq' ), $( 'espejo-der' ) ], game.cam.mode === 0 );
 	world.field.unlimited = false;
@@ -624,7 +657,7 @@ function startTraffic() {
 	game.pedView = new PedestrianView( scene, game.peds );
 	game.traffic = new Traffic( { graph: game.graph, rng: seededRandom(), count: game.trafficOn ? game.quality.traffic : 0, groundAt, signals: game.signals, pedestrians: game.peds } );
 	game.traffic.enabled = game.trafficOn;
-	game.trafficView = new TrafficView( scene, game.traffic );
+	game.trafficView = new TrafficView( scene, game.traffic, { fiat: () => game.fiat } );
 	if ( _lastDaylight ) game.trafficView.setNight( _lastDaylight.lamps );
 
 }
@@ -722,10 +755,13 @@ function applyDaylight() {
 	if ( game.world && game.world.setLight ) game.world.setLight( d );
 	if ( game.model ) game.model.setNight( 1 - d.level );
 	if ( game.trafficView ) game.trafficView.setNight( d.lamps );
+	// los reflejos del Fiat salen del cielo de día y se apagan con la luz
+	if ( game.fiat ) game.fiat.setLightLevel( d.level );
 	_lastDaylight = d;
 	return d;
 
 }
+function paintHex( id ) { const p = FIAT600_PAINTS.find( p => p.id === id ); return ( p || FIAT600_PAINTS[ 0 ] ).hex; }
 const WORLD_NAMES = { test: 'ciudad de pruebas', open: 'mapa abierto' };
 
 function setCamera( mode ) {
@@ -865,8 +901,8 @@ function updateCamera( dt, look ) {
 
 		// exterior: detrás del conjunto completo, siguiendo a la unidad trasera con algo de retardo
 		if ( drag.active ) { cam.orbit -= drag.dx * 0.006; cam.lift = THREE.MathUtils.clamp( cam.lift + drag.dy * 0.03, - 3, 14 ); }
-		const tl = t.spec.trailer, tr = t.spec.tractor;
-		let bx = t.x, bz = t.z, by = t.y, yawRef = t.yaw, back = tr.rearOverhang + 9.5, height = 6.4;
+		const tl = t.spec.trailer, tr = t.spec.tractor, C = t.spec.camera;
+		let bx = t.x, bz = t.z, by = t.y, yawRef = t.yaw, back = C ? C.back : tr.rearOverhang + 9.5, height = C ? C.height : 6.4;
 		if ( tl ) { trailerAxleXZ( t, _ax ); bx = _ax.x; bz = _ax.z; by = t.trailerY; yawRef = t.trailerYaw; back = tl.length - tl.kingpinFromFront - tl.wheelbase + 11; height = 9.2; }
 		if ( ! cam.init ) { cam.yaw = yawRef; cam.init = true; }
 		cam.yaw += wrap( yawRef - cam.yaw ) * Math.min( 1, dt * 3 );
@@ -878,7 +914,8 @@ function updateCamera( dt, look ) {
 		if ( gy === gy && _v1.y < gy + 1.2 ) _v1.y = gy + 1.2;
 		camera.position.copy( _v1 );
 		// mira hacia la cabina, un poco por delante
-		_v2.set( t.x - Math.sin( t.yaw ) * ( tr.wheelbase + 6 ), t.y + 1.0, t.z - Math.cos( t.yaw ) * ( tr.wheelbase + 6 ) );
+		const ahead = C ? tr.wheelbase + C.lookAhead : tr.wheelbase + 6, lookY = C ? C.lookHeight : 1.0;
+		_v2.set( t.x - Math.sin( t.yaw ) * ahead, t.y + lookY, t.z - Math.cos( t.yaw ) * ahead );
 		camera.up.set( 0, 1, 0 );
 		camera.lookAt( _v2 );
 
@@ -887,7 +924,7 @@ function updateCamera( dt, look ) {
 		// cenital: el rumbo del camión queda hacia arriba
 		let cx = t.x, cz = t.z;
 		if ( t.spec.trailer ) { trailerAxleXZ( t, _ax ); cx = ( t.x + _ax.x ) / 2; cz = ( t.z + _ax.z ) / 2; }
-		camera.position.set( cx, t.y + 62, cz );
+		camera.position.set( cx, t.y + ( t.spec.camera ? t.spec.camera.top : 62 ), cz );
 		camera.up.set( - Math.sin( t.yaw ), 0, - Math.cos( t.yaw ) );
 		camera.lookAt( cx, t.y, cz );
 
@@ -957,7 +994,7 @@ function physicsStep( inp ) {
 			sound.thud( tv.hit );
 			const fine = car.kind === 'micro' ? 40000 : 20000;
 			if ( game.jobs ) game.jobs.fine( fine );
-			hud.toast( `Chocaste ${ car.kind === 'micro' ? 'una micro' : car.kind === 'camioneta' ? 'una camioneta' : 'un auto' } a ${ Math.round( tv.hit * 3.6 ) } km/h: multa ${ fmtPesos( fine ) }`, 'alerta', 3.5 );
+			hud.toast( `Chocaste ${ car.kind === 'micro' ? 'una micro' : car.kind === 'camioneta' ? 'una camioneta' : car.kind === 'fiat600' ? 'un Fiat 600' : 'un auto' } a ${ Math.round( tv.hit * 3.6 ) } km/h: multa ${ fmtPesos( fine ) }`, 'alerta', 3.5 );
 
 		}
 
@@ -1155,20 +1192,20 @@ function updateJobCard() {
 	const j = jobs.job;
 	if ( jobs.state === 'offer' ) {
 
-		hud.setJob( { folio: folio( j.folio ), carga: `${ j.cargo } · ${ ( j.mass / 1000 ).toLocaleString( 'es-CL' ) }\u00a0t`, destino: j.dest.label, faltan: fmtDist( j.length ), pago: fmtPesos( j.pay ), dano: '0 %', timbre: 'Disponible', ok: false, pista: TOUCH ? 'Toca aquí para aceptar. En la pausa puedes pedir otro.' : 'Enter acepta el encargo. N pide otro.', caja } );
+		hud.setJob( { folio: folio( j.folio ), carga: `${ j.cargo } · ${ fmtMass( j.mass ) }`, destino: j.dest.label, faltan: fmtDist( j.length ), pago: fmtPesos( j.pay ), dano: '0 %', timbre: 'Disponible', ok: false, pista: TOUCH ? 'Toca aquí para aceptar. En la pausa puedes pedir otro.' : 'Enter acepta el encargo. N pide otro.', caja } );
 		hud.setManeuver( null );
 
 	} else if ( jobs.state === 'active' ) {
 
 		const rem = jobs.tracker.remaining;
-		hud.setJob( { folio: folio( j.folio ), carga: `${ j.cargo } · ${ ( j.mass / 1000 ).toLocaleString( 'es-CL' ) }\u00a0t`, destino: j.dest.label, faltan: fmtDist( rem ), pago: fmtPesos( jobs.currentPay( t ) ), dano, timbre: 'En ruta', ok: false, pista: rem < 60 ? 'Detén el camión dentro del aro para entregar.' : ( game.street ? `Vas por ${ game.street }` : '' ), caja } );
+		hud.setJob( { folio: folio( j.folio ), carga: `${ j.cargo } · ${ fmtMass( j.mass ) }`, destino: j.dest.label, faltan: fmtDist( rem ), pago: fmtPesos( jobs.currentPay( t ) ), dano, timbre: 'En ruta', ok: false, pista: rem < 60 ? 'Detén el camión dentro del aro para entregar.' : ( game.street ? `Vas por ${ game.street }` : '' ), caja } );
 		const g = jobs.guidance( t );
 		hud.setManeuver( g ? { dist: g.dist === null ? '' : fmtDist( g.dist ), texto: g.texto, lado: g.lado } : null );
 
 	} else if ( jobs.state === 'done' && jobs.last ) {
 
 		const r = jobs.last;
-		hud.setJob( { folio: folio( r.folio ), carga: `${ r.cargo } · ${ ( r.mass / 1000 ).toLocaleString( 'es-CL' ) }\u00a0t`, destino: r.dest.label, faltan: '0 m', pago: fmtPesos( r.paid ), dano: `${ Math.round( r.damage * 100 ) } %`, timbre: 'Entregado', ok: true, pista: 'Buscando el próximo encargo.', caja } );
+		hud.setJob( { folio: folio( r.folio ), carga: `${ r.cargo } · ${ fmtMass( r.mass ) }`, destino: r.dest.label, faltan: '0 m', pago: fmtPesos( r.paid ), dano: `${ Math.round( r.damage * 100 ) } %`, timbre: 'Entregado', ok: true, pista: 'Buscando el próximo encargo.', caja } );
 		hud.setManeuver( null );
 
 	} else {

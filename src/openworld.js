@@ -158,6 +158,8 @@ export class OpenWorld {
 		const T = this.textures = makeTextures();
 		this.materials = {
 			ground: layer( 0, T.grass ), buildings: layer( 0, T.facade ), decor: layer( 0 ), solid: layer( 0 ),
+			// cajas de choque que no se dibujan (los Fiat estacionados, bajos para las sondas del camión)
+			ghost: new THREE.MeshBasicMaterial( { visible: false } ),
 			// placas de las señales: la textura del atlas, transparente fuera de la placa
 			sign: layer( 0, T.signs, T.signs ? { transparent: true, alphaTest: 0.5, side: THREE.DoubleSide } : {} ),
 			park: layer( 1, T.grass ), walk: layer( 2, T.sidewalk ), road: layer( 3, T.asphalt ),
@@ -183,7 +185,7 @@ export class OpenWorld {
 		this.roadsData = null; this.buildingsData = null;
 		this.roadsError = null; this.buildingsError = null;
 		this.built = 0; this.buildMs = 0; this.trees = 0; this.lamps = 0;
-		this.furniture = { postes: 0, estacionados: 0, paraderos: 0, senales: 0, semaforos: 0, bancas: 0, cebras: 0, relleno: 0 };
+		this.furniture = { postes: 0, estacionados: 0, fiats: 0, paraderos: 0, senales: 0, semaforos: 0, bancas: 0, cebras: 0, relleno: 0 };
 		this.signals = null; this.signalTime = 0; this._signalT = 0; // semáforos: el juego los asigna y pone la hora
 		this.pending = 0;          // trozos por construir dentro del radio de carga
 		this.pendingNear = 0;      // trozos por construir dentro del radio que la carga espera
@@ -310,7 +312,7 @@ export class OpenWorld {
 			}
 
 			this.trees += parts.trees; this.lamps += parts.lamps;
-			const F = this.furniture; F.postes += parts.poles; F.estacionados += parts.parked; F.paraderos += parts.stops; F.senales += parts.signs; F.semaforos += parts.lights; F.bancas += parts.benches; F.cebras += parts.crosswalks; F.relleno += parts.infill;
+			const F = this.furniture; F.postes += parts.poles; F.estacionados += parts.parked; F.fiats += parts.fiats; F.paraderos += parts.stops; F.senales += parts.signs; F.semaforos += parts.lights; F.bancas += parts.benches; F.cebras += parts.crosswalks; F.relleno += parts.infill;
 			this.chunks.set( `${ c.i },${ c.j }`, { rays, meshes, objects: parts.objects, lamps: glowMesh && parts.signalLamps.length ? { attr: glowMesh.geometry.getAttribute( 'color' ), list: parts.signalLamps, shown: null } : null, i: c.i, j: c.j, cx: ( c.i + 0.5 ) * size, cz: ( c.j + 0.5 ) * size } );
 			this.built ++;
 			this.pending --;

@@ -96,7 +96,9 @@ export class Sound {
 		const ctx = this.ctx;
 		if ( ! ctx ) return;
 		const now = ctx.currentTime, k = 0.05;
-		const f = Math.max( 20, t.rpm / 20 );
+		// frecuencia de encendido: rpm / 60 por media vuelta y por cilindro (seis cilindros: rpm / 20)
+		const cyl = ( t.spec && t.spec.cylinders ) || 6, turbo = ! t.spec || t.spec.turbo !== false;
+		const f = Math.max( 20, t.rpm / 120 * cyl );
 		this.osc[ 0 ][ 0 ].frequency.setTargetAtTime( f, now, k );
 		this.osc[ 1 ][ 0 ].frequency.setTargetAtTime( f / 2, now, k );
 		this.osc[ 2 ][ 0 ].frequency.setTargetAtTime( f * 1.012, now, k );
@@ -105,7 +107,7 @@ export class Sound {
 
 		const v = Math.abs( t.v );
 		this.roadGain.gain.setTargetAtTime( Math.min( 0.22, v / 25 * 0.22 ), now, 0.2 );
-		const boost = t.throttle * Math.max( 0, ( t.rpm - 900 ) / 1100 );
+		const boost = turbo ? t.throttle * Math.max( 0, ( t.rpm - 900 ) / 1100 ) : 0;
 		this.turbo.frequency.setTargetAtTime( 1800 + t.rpm * 0.9, now, 0.1 );
 		this.turboGain.gain.setTargetAtTime( boost * 0.035, now, 0.15 );
 

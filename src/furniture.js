@@ -10,6 +10,8 @@
 // Todas las piezas se colocan con un rumbo: `yaw` es el ángulo del eje de la
 // calle, con el mismo convenio que el camión (el frente mira a -Z con yaw 0).
 
+import { farLevel } from './fiat600-pack.js';
+
 export const F = {
 	post: [ 0.58, 0.58, 0.56 ], wood: [ 0.45, 0.38, 0.3 ], steel: [ 0.35, 0.37, 0.4 ], dark: [ 0.12, 0.13, 0.15 ],
 	glass: [ 0.2, 0.26, 0.32 ], tire: [ 0.08, 0.08, 0.09 ], roof: [ 0.55, 0.58, 0.6 ], bench: [ 0.5, 0.36, 0.22 ],
@@ -65,6 +67,52 @@ export function parkedCar( solid, x, z, yaw, color, seed = 0 ) {
 	boxAt( solid, x, z, yaw, L * 0.5 - 0.6, W - 0.3, hood + 0.46, hood + 0.54, color, 0.9, - L * 0.05 );
 	const r = 0.32;
 	for ( const dl of [ L / 2 - 0.85, - L / 2 + 0.85 ] ) for ( const s of [ - 1, 1 ] ) boxAt( solid, x, z, yaw, 2 * r, 0.24, 0, 2 * r, F.tire, 0.6, dl, s * ( W / 2 - 0.02 ) );
+
+}
+
+// Fiat 600 estacionado: el nivel lejano del modelo del auto (2,2 mil triángulos), horneado en la malla de la
+// calle con el color de la carrocería y un sombreado por vértice que sigue al sol del juego. Como la carrocería
+// queda bajo el metro de altura de las sondas del camión en el capó y en la cola, el choque lo responde además
+// una caja invisible en la capa `ghost`, que cubre el auto de punta a punta.
+const SUN = [ - 0.5, 1, 0.35 ], SUN_LEN = Math.hypot( ...SUN );
+export const FIAT_PAINTS = [ [ 0.29, 0.44, 0.49 ], [ 0.78, 0.71, 0.52 ], [ 0.37, 0.54, 0.35 ], [ 0.32, 0.35, 0.35 ], [ 0.48, 0.04, 0.03 ], [ 0.02, 0.04, 0.08 ], [ 0.85, 0.84, 0.80 ], [ 0.006, 0.006, 0.007 ] ];
+export function parkedFiat( solid, ghost, x, z, yaw, color ) {
+
+	const far = farLevel();
+	const b = far.meta.bounds, cz = ( b.min[ 2 ] + b.max[ 2 ] ) / 2;   // el modelo tiene el origen bajo el eje trasero: se centra
+	const [ fx, fz ] = fwd( yaw ), [ rx, rz ] = right( yaw );
+	const lx = SUN[ 0 ] / SUN_LEN, ly = SUN[ 1 ] / SUN_LEN, lz = SUN[ 2 ] / SUN_LEN;
+	for ( const id of [ 'L3.car.paint', 'L3.car.rest', 'L3.car.shine' ] ) {
+
+		const m = far.meshes[ id ], P = m.position, N = m.normal, C = m.color, n = P.length / 3, base = solid.count;
+		for ( let i = 0; i < n; i ++ ) {
+
+			// el modelo mira a -z: su -z va hacia el rumbo y su +x hacia la derecha
+			const px = P[ i * 3 ], py = P[ i * 3 + 1 ], pz = P[ i * 3 + 2 ] - cz;
+			const wx = x - fx * pz + rx * px, wz = z - fz * pz + rz * px;
+			const nx = N[ i * 3 ], ny = N[ i * 3 + 1 ], nz = N[ i * 3 + 2 ];
+			const wnx = - fx * nz + rx * nx, wnz = - fz * nz + rz * nx;
+			const shade = 0.78 + 0.22 * Math.max( 0, wnx * lx + ny * ly + wnz * lz );   // suave: la malla de la calle ya recibe la luz del sol
+			solid.vertex( wx, py, wz, C ? [ C[ i * 3 ], C[ i * 3 + 1 ], C[ i * 3 + 2 ] ] : color, shade );
+
+		}
+
+		// las caras que miran hacia abajo (los bajos del auto) no se ven desde la calle: quedan fuera,
+		// como las cajas de la ciudad, que no tienen fondo
+		const I = m.index;
+		for ( let k = 0; k < I.length; k += 3 ) {
+
+			const a = I[ k ] * 3, b2 = I[ k + 1 ] * 3, c = I[ k + 2 ] * 3;
+			const ux = P[ b2 ] - P[ a ], uy = P[ b2 + 1 ] - P[ a + 1 ], uz = P[ b2 + 2 ] - P[ a + 2 ], vx = P[ c ] - P[ a ], vy = P[ c + 1 ] - P[ a + 1 ], vz = P[ c + 2 ] - P[ a + 2 ];
+			const ny = uz * vx - ux * vz, len = Math.hypot( uy * vz - uz * vy, ny, ux * vy - uy * vx );
+			if ( len > 0 && ny / len < - 0.6 ) continue;
+			solid.tri( base + I[ k ], base + I[ k + 1 ], base + I[ k + 2 ] );
+
+		}
+
+	}
+
+	if ( ghost ) boxAt( ghost, x, z, yaw, b.max[ 2 ] - b.min[ 2 ], b.max[ 0 ] - b.min[ 0 ], 0.3, 1.2, F.dark, 1 );
 
 }
 

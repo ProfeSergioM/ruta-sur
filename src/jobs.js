@@ -66,9 +66,11 @@ export class Jobs {
 			if ( ! dest ) continue;
 			const rt = route( this.graph, t.x, t.z, hx, hz, dest.node, Math.abs( t.v ) );
 			if ( ! rt || rt.length < 150 ) continue;
-			const c = CARGAS[ Math.floor( this.rng() * CARGAS.length ) % CARGAS.length ];
-			const scale = this.spec.maxCargo / 25000;
-			const mass = Math.round( ( c.masa[ 0 ] + this.rng() * ( c.masa[ 1 ] - c.masa[ 0 ] ) ) * scale * 2 ) / 2 * 1000;
+			// un vehículo puede traer sus propias cargas (ya a su medida); si no, las del articulado escaladas a su capacidad
+			const own = this.spec.cargas, table = own || CARGAS;
+			const c = table[ Math.floor( this.rng() * table.length ) % table.length ];
+			const scale = own ? 1 : this.spec.maxCargo / 25000, step = own ? 0.005 : 0.5;    // redondeo: 5 kg o media tonelada
+			const mass = Math.round( ( c.masa[ 0 ] + this.rng() * ( c.masa[ 1 ] - c.masa[ 0 ] ) ) * scale / step ) * step * 1000;
 			this.job = { folio: this.folio, cargo: c.nombre, mass, dest, route: rt, length: rt.length, pay: payFor( rt.length, mass, c.tarifa ), tarifa: c.tarifa };
 			this.tracker = new RouteTracker( rt );
 			this.state = 'offer';

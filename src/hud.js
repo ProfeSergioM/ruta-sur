@@ -13,6 +13,8 @@ export function fmtDist( m ) {
 }
 
 export const fmtPesos = v => `$ ${ nf.format( Math.round( v ) ) }`;
+// masa de una carga: en kilos bajo una tonelada, si no en toneladas
+export const fmtMass = kg => kg < 1000 ? `${ Math.round( kg ) }\u00a0kg` : `${ ( kg / 1000 ).toLocaleString( 'es-CL' ) }\u00a0t`;
 
 export class Hud {
 
@@ -20,6 +22,7 @@ export class Hud {
 
 		this.el = $( 'hud' );
 		this.vel = $( 'velocidad' ); this.marcha = $( 'marcha' ); this.rpmBar = document.querySelector( '#rpm .barra' ); this.rpmFill = this.rpmBar.firstElementChild;
+		this.setEngine( null );
 		this.limite = $( 'limite' );
 		this.aviso = $( 'aviso' );
 		this.maniobra = $( 'maniobra' );
@@ -42,11 +45,24 @@ export class Hud {
 
 	}
 
+	// Escala del cuentavueltas: de un poco bajo el ralentí hasta el corte del motor. Las marcas de la escala
+	// se reparten en pasos redondos (500 rpm en un diésel de camión, 1000 en el motor del auto).
+	setEngine( e ) {
+
+		this.rpm0 = e ? e.idle * 0.6 : 500; this.rpm1 = e ? e.redline * 0.96 : 2500;
+		const scale = document.querySelector( '#rpm .escala' );
+		if ( ! scale ) return;
+		const step = this.rpm1 - this.rpm0 > 3500 ? 1000 : 500, marks = [];
+		for ( let r = Math.ceil( this.rpm0 / step ) * step; r <= this.rpm1; r += step ) marks.push( r );
+		scale.replaceChildren( ...marks.map( r => { const el = document.createElement( 'span' ); el.textContent = String( r / 100 ); el.style.left = `${ ( ( r - this.rpm0 ) / ( this.rpm1 - this.rpm0 ) * 100 ).toFixed( 1 ) }%`; return el; } ) );
+
+	}
+
 	setDrive( kmh, gear, rpm, limit ) {
 
 		this.text( 'velocidad', String( Math.round( kmh ) ) );
 		this.text( 'marcha', gear );
-		const f = Math.max( 0, Math.min( 1, ( rpm - 500 ) / 2000 ) );
+		const f = Math.max( 0, Math.min( 1, ( rpm - this.rpm0 ) / ( this.rpm1 - this.rpm0 ) ) );
 		this.rpmFill.style.width = ( f * 100 ).toFixed( 1 ) + '%';
 		this.limite.hidden = ! limit;
 		if ( limit ) {

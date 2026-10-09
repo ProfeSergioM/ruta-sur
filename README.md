@@ -1,6 +1,6 @@
 # Ruta Sur
 
-Simulador de camiones que corre en el navegador sobre un mapa abierto levantado desde OpenStreetMap: las calles verdaderas de una ciudad, con sus edificios como cajas de colores. El jugador conduce un camión de reparto urbano y reparte cargas entre esquinas (el tracto con semirremolque y el camión rígido siguen disponibles con `&veh=articulado` o `&veh=rigido` en la dirección: son grandes para una ciudad).
+Simulador de camiones que corre en el navegador sobre un mapa abierto levantado desde OpenStreetMap: las calles verdaderas de una ciudad, con sus edificios como cajas de colores. El jugador conduce un camión de reparto urbano, o un Fiat 600 D de 1960, y reparte cargas entre esquinas (el tracto con semirremolque y el camión rígido siguen disponibles con `&veh=articulado` o `&veh=rigido` en la dirección: son grandes para una ciudad).
 
 Este es un prototipo. Hasta la versión 0.4 manejaba también sobre la malla 3D fotorrealista de Google, que exige una credencial de pago o una cuenta de Cesium ion; la 0.5 deja solo los datos abiertos.
 
@@ -9,7 +9,7 @@ Este es un prototipo. Hasta la versión 0.4 manejaba también sobre la malla 3D 
 ## Cómo jugar
 
 1. Abre https://profesergiom.github.io/ruta-sur/ en Chrome o Edge. También puedes guardar `docs/index.html` en el computador y abrirlo con doble clic: es el mismo archivo y funciona igual. Las pruebas corren en Chromium, el motor de ambos navegadores. Firefox no se probó.
-2. Elige la ciudad (Temuco, Santiago, Concepción, o cualquier punto por latitud y longitud), el camión y la calidad, y presiona "Conducir". El juego pide a OpenStreetMap las calles y los edificios de esa zona y levanta la ciudad. Necesita internet la primera vez; la respuesta queda guardada dos semanas en el navegador.
+2. Elige la ciudad (Temuco, Santiago, Concepción, o cualquier punto por latitud y longitud), el vehículo (y el color, si es el Fiat) y la calidad, y presiona "Conducir". El juego pide a OpenStreetMap las calles y los edificios de esa zona y levanta la ciudad. Necesita internet la primera vez; la respuesta queda guardada dos semanas en el navegador.
 3. "Ciudad de pruebas, sin conexión" abre una ciudad generada en el momento. Sirve para conocer los controles y, abierta como archivo, funciona sin internet.
 
 El archivo trae adentro todo lo que el juego necesita: el programa, las bibliotecas y las tipografías. Al abrirse no pide nada a la red. La red se usa recién al pulsar "Conducir", para pedir las calles y los edificios a Overpass.
@@ -41,7 +41,7 @@ Con pantalla táctil aparecen botones en pantalla, y la guía de despacho se toc
 
 ## Cómo está hecho
 
-El juego es un solo archivo HTML sin dependencias externas. `tools/build.mjs` une con esbuild los módulos de `src/` y las bibliotecas (Three.js y three-mesh-bvh), agrega las tipografías y lo inserta todo en `src/index.template.html`. El resultado, `docs/index.html`, pesa cerca de 0,8 MB. GitHub Pages publica la carpeta `docs/` tal cual, así que ese archivo es a la vez el juego en línea y el que se puede descargar. La raíz del repositorio lleva un `index.html` que redirige a `docs/` y un `.nojekyll`, por si Pages quedara configurado para publicar la raíz: sin ellos, GitHub mostraría el README en lugar del juego.
+El juego es un solo archivo HTML sin dependencias externas. `tools/build.mjs` une con esbuild los módulos de `src/` y las bibliotecas (Three.js y three-mesh-bvh), agrega las tipografías y lo inserta todo en `src/index.template.html`. El resultado, `docs/index.html`, pesa cerca de 1,7 MB; la mitad es la geometría del Fiat 600. GitHub Pages publica la carpeta `docs/` tal cual, así que ese archivo es a la vez el juego en línea y el que se puede descargar. La raíz del repositorio lleva un `index.html` que redirige a `docs/` y un `.nojekyll`, por si Pages quedara configurado para publicar la raíz: sin ellos, GitHub mostraría el README en lugar del juego.
 
 La primera versión pedía las bibliotecas y las tipografías a servidores externos al abrirse. Bastaba que esos pedidos estuvieran bloqueados, como ocurre en la vista previa de una aplicación, para que la página quedara sin programa. Por eso ahora todo viaja en el archivo.
 
@@ -53,6 +53,7 @@ La primera versión pedía las bibliotecas y las tipografías a servidores exter
 | `jobs.js` | Encargos: carga, destino, pago, bono de puntualidad, descuento por daño |
 | `geo.js` | Conversión entre latitud y longitud y las coordenadas del juego (WGS84) |
 | `truck-model.js`, `hud.js`, `audio.js`, `input.js` | Modelo 3D del camión, tablero y minimapa, sonido sintetizado, teclado, táctil y mando |
+| `fiat600.js`, `fiat600-pack.js`, `fiat600-data.js` | El Fiat 600 D: vehículo manejable con el mismo contrato que el camión, autos de ambientación y la geometría empaquetada en tres niveles de detalle más uno para la ciudad (ver abajo) |
 | `radio.js` | Radios chilenas por internet: lista de emisoras, reproducción con el elemento de audio y una dirección propia |
 | `daylight.js` | Ciclo de día y noche: nivel de luz, colores del cielo y la bruma, tinte de la ciudad, sol y luces encendidas según la hora. No depende de Three.js |
 | `mirrors.js` | Espejos retrovisores: una cámara por espejo dibuja en una textura que va en el vidrio de la cabina y en los recuadros de la pantalla |
@@ -92,6 +93,36 @@ Todo lo que viste el mapa abierto sale de datos abiertos o se genera en el momen
 - **Mobiliario urbano.** Las calles menores llevan postes de luz cada 28 m, alternando de lado. Las vías principales (terciarias y mayores) llevan autos estacionados junto a la solera con dos ruedas sobre la vereda, en el sentido de su lado y con huecos al azar; paraderos abiertos hacia la calle con su señal; y señales de velocidad máxima, una por sentido. En los cruces, dos vías principales reciben semáforos en las esquinas (poste con brazo sobre la calle y cabezal grande), y una calle menor que llega a una principal recibe un disco Pare. Los semáforos funcionan: cada cruce reparte sus vías en dos grupos según su orientación, que se turnan el verde (14 s de verde, 3 de ámbar y 1 con todo en rojo), con un desfase propio por cruce, y las lámparas se pintan según ese estado. El tráfico frena en rojo, pasa en ámbar solo si ya no alcanza a detenerse, y ante un Pare se detiene un segundo antes de seguir. Si el camión cruza la línea de detención con luz roja a más de 1 m/s, paga una multa de $ 30.000. Todo sale de `signals.js`, que reconoce los cruces desde la red vial, así que la ciudad de pruebas (sin semáforos dibujados) no los aplica. Las plazas tienen bancas y un basurero. Nada se planta encima de otra cosa, en un cruce, sobre un edificio ni sobre el agua. Las placas de las señales salen de un atlas dibujado al vuelo (Pare, 50, paradero y no estacionar).
 - **Cerros.** Una línea de lomas brumosas rodea la ciudad en el horizonte, a la distancia que la calidad elegida alcanza a dibujar. Es decorativa: no sale de ningún modelo de elevación, y por eso no coincide con los cerros reales.
 
+### Fiat 600 D
+
+Además de los camiones se puede conducir un Fiat 600 D (1960-1964), el auto chico con el motor atrás. El modelo 3D se construyó aparte, como superficie implícita recortada, a partir de un plano de fábrica acotado (545 + 2000 + 750 mm de voladizo delantero, distancia entre ejes y voladizo trasero), un plano de cuatro vistas y fotografías de un ejemplar restaurado. Es una aproximación visual, no un escaneo; las puertas no se abren, no hay motor ni mecánica inferior, el interior está simplificado y los colores son tonos de época aproximados, no códigos de fábrica. Las patentes son inventadas.
+
+La geometría viaja dentro del archivo del juego en cuatro niveles de detalle, comprimida y decodificada al cargar (`fiat600-data.js`, 0,9 MB): el nivel 0 (90 mil triángulos, con interior, ruedas que giran y volante) es el que se maneja; los niveles 1 y 2 (20 mil y 4,7 mil) visten a los Fiat del tráfico según la distancia; y el nivel 3 (2,2 mil, sin interior, vidrios opacos) se hornea en las mallas de las calles como auto estacionado, uno de cada cinco, con un sombreado por vértice que sigue al sol del juego. Como la carrocería queda bajo el metro de altura de las sondas del camión en el capó y en la cola, cada Fiat estacionado lleva además una caja de choque invisible de punta a punta (capa `ghost`).
+
+La física es la misma del camión con la ficha del auto (`VEHICLES.fiat600`): sin remolque, 580 kg, cuatro marchas y un motor a gasolina cuyo par crece con las vueltas hasta cerca de su máximo (`engine.knee`). Tres valores que los camiones toman de `PARAMS` el auto los trae propios: el arrastre aerodinámico (`cdA`), el limitador de velocidad (110 km/h en lugar de 90) y la aceleración lateral admitida al girar. Los encargos son a su medida (encomiendas, pan, repuestos, documentos, flores, verduras; de 5 a 280 kg), el cuentavueltas se escala hasta las 5200 rpm y el sonido del motor pasa a cuatro cilindros sin turbo. La vista de cabina usa el interior del modelo: el volante gira, los dos espejos (el de la puerta y el interior) muestran la imagen de sus cámaras, y de noche se encienden los focos y los pilotos.
+
+| Campo | Valor | Origen |
+|---|---|---|
+| Distancia entre ejes | 2,000 m | Plano de fábrica acotado; autobelle.it |
+| Voladizos | 0,545 y 0,750 m | Plano de fábrica (545 + 2000 + 750 = 3295 mm) |
+| Ancho | 1,380 m | autobelle.it; Wikipedia |
+| Trochas | 1,150 y 1,160 m | autobelle.it |
+| Masa en orden de marcha | 580 kg | autobelle.it. Wikipedia da 585 kg para el 600 en general |
+| Carga útil | 320 kg | autobelle.it |
+| Potencia | 29 CV (21 kW) a 4800 rpm | autoemotodepoca; Wikipedia. autobelle.it indica 32 CV al mismo régimen; se adoptó el valor menor |
+| Par | 5,5 kgm a 2800 rpm (54 N·m) | autobelle.it |
+| Relaciones de caja | 3,385, 2,055, 1,333, 0,896; marcha atrás 4,275 | autobelle.it |
+| Relación final | 4,875 | autobelle.it |
+| Neumáticos | 5.20-12 | autobelle.it; Wikipedia (it) |
+| Velocidad máxima | 110 km/h | autobelle.it; autoemotodepoca; Wikipedia |
+| Radio de giro | 4,6 m | autobelle.it |
+
+`maxSteer` (0,51 rad) se eligió para que la rueda delantera exterior describa ese radio de 4,6 m, interpretado como radio entre aceras. Son supuestos, sin fuente publicada: el ralentí (850 rpm), el corte (5200 rpm), el codo de la curva de par (2400 rpm), el par de retención, el rendimiento de la transmisión, los umbrales de cambio, la carga máxima sobre el eje motriz (540 kg), el radio de rueda bajo carga (0,27 m), `cdA` (ajustado para llegar a unos 110 km/h con el coeficiente de rodadura del juego) y las distancias de cámara. Con las relaciones publicadas y ese radio, la 4.ª marcha a 4800 rpm da 112 km/h, que coincide con la velocidad máxima publicada. El modelo de motor del juego es generoso con un motor tan chico: el auto acelera de 0 a 100 km/h en unos 24 s, cuando el original tardaba bastante más.
+
+Fuentes de la ficha: https://www.autobelle.it/it/modelli.xhtml?m=fiat_600_d · https://autoemotodepoca.altervista.org/fiat-600-d-19601964-italia/ · https://en.wikipedia.org/wiki/Fiat_600 · https://it.wikipedia.org/wiki/Fiat_600
+
+Los datos de la geometría los produce un generador aparte, en Python (superficie implícita, recorte CSG y decimación por niveles), que no forma parte de este repositorio.
+
 ### Choques
 
 El camión choca con lo que la malla tenga a un metro del suelo: en el mapa abierto, los edificios y todo lo sólido de la calle (troncos, postes, autos estacionados, paraderos, señales, semáforos y bancas), que va en una capa aparte de la decoración que cuelga arriba. Dos familias de sondas lo cuidan. Las del parachoques y de la cola miran en el sentido de marcha y recortan el avance a la distancia libre. Las de los costados vigilan los flancos de cada unidad, porque en una curva el semirremolque corta la esquina y su costado alcanza lo que el tracto esquivó. Cada punto del flanco lanza un rayo desde donde está hacia donde iría en el paso, y un rayo más recorre cada flanco de punta a punta para atrapar una esquina ajena que entre entre dos puntos. Un movimiento que se aleja del obstáculo nunca se bloquea, así que de un roce siempre se sale en reversa. La velocidad de acercamiento se mide según la normal de la superficie tocada: un roce tangencial detiene el camión sin dañarlo, y un costalazo descuenta como un choque frontal.
@@ -116,17 +147,17 @@ La red vial sale de la misma consulta a OpenStreetMap. Con ella el juego elige d
 
 ```
 npm install
-npm test          # pruebas numéricas, sin navegador (382 comprobaciones)
-npm run e2e       # el juego completo en Chromium sin interfaz, 250 comprobaciones (necesita: npm i -D playwright)
+npm test          # pruebas numéricas, sin navegador
+npm run e2e       # el juego completo en Chromium sin interfaz (necesita: npm i -D playwright)
 ```
 
-Las pruebas numéricas cubren el modelo del camión (radios de giro contra la teoría, corredor de giro de la norma europea, aceleración, frenado, pendientes, caja de cambios, bajadas, choques frontales y laterales), la geodesia, la red vial, el mapa abierto (triangulación, prismas, trozos, memoria de edificios) y los encargos. `tests/osm-real.test.mjs` usa una muestra real del centro de Temuco (`tests/fixtures/temuco-centro.json`, © OpenStreetMap contributors, ODbL). El entorno de desarrollo no llega a Overpass, así que no hay una muestra real de edificios: `tests/open-fixture.mjs` reparte plantas sintéticas en las manzanas de esa muestra, con las etiquetas que usa el juego.
+Las pruebas numéricas cubren el modelo del camión (radios de giro contra la teoría, corredor de giro de la norma europea, aceleración, frenado, pendientes, caja de cambios, bajadas, choques frontales y laterales), el Fiat 600 (aceleración, velocidad máxima, frenado, pendientes, radio de giro publicado, y en `fiat600.test.mjs` los datos empaquetados, el marco de referencia, el contrato del modelo, los espejos, las luces y los autos de ambientación), la geodesia, la red vial, el mapa abierto (triangulación, prismas, trozos, memoria de edificios) y los encargos. `tests/osm-real.test.mjs` usa una muestra real del centro de Temuco (`tests/fixtures/temuco-centro.json`, © OpenStreetMap contributors, ODbL). El entorno de desarrollo no llega a Overpass, así que no hay una muestra real de edificios: `tests/open-fixture.mjs` reparte plantas sintéticas en las manzanas de esa muestra, con las etiquetas que usa el juego.
 
 Las pruebas de extremo a extremo abren `docs/index.html` como archivo local y anotan cada pedido que sale a la red. Overpass se simula en su dirección real y responde como el servicio a lo que el juego pide: los campos del nivel de detalle consultado, calles o edificios según la consulta.
 
 | Archivo | Qué comprueba |
 |---|---|
-| `e2e-test-city.mjs` | Ciudad de pruebas con teclado: manejo, cámaras, entrega completa, choque frontal, roce lateral y espejos. Sin pedidos a la red |
+| `e2e-test-city.mjs` | Ciudad de pruebas con teclado: manejo, cámaras, entrega completa, choque frontal, roce lateral y espejos. Sin pedidos a la red. Corre con cada vehículo: `articulado`, `rigido` y `fiat600` |
 | `e2e-touch.mjs` | Lo mismo con pantalla táctil, en tamaño de teléfono, y que los espejos no tapen los botones |
 | `e2e-open.mjs` | Mapa abierto: calles reales del centro de Temuco y edificios sintéticos en sus manzanas, servidos por un Overpass simulado. Partida con el piloto, choque contra un edificio y la carga detenida cuando Overpass falla |
 | `e2e-vista-previa.mjs` | El archivo dentro de un marco aislado con política de seguridad estricta, entregado como dirección, `blob:` y `srcdoc`, y en una vista que no ejecuta scripts |
@@ -142,6 +173,8 @@ Verificado solo contra simulaciones:
 
 - **Overpass (edificios).** La consulta de edificios sigue la misma forma que la de calles (`way["building"](around:...)`, `out tags geom`), pero no se pudo enviar al servicio real desde el entorno de desarrollo. Quedan por confirmar en la primera partida: el tamaño de la respuesta en una ciudad densa (1,5 km de Santiago pueden ser decenas de miles de edificios), su tiempo, y si cabe en la memoria local del navegador. Si no cabe, el juego la usa sin guardarla.
 
+- **Fiat 600 en pantalla.** El auto, sus espejos, sus luces y los Fiats de la calle se revisaron en Chromium sin interfaz, dibujando por software, en las pruebas de extremo a extremo y en capturas. Falta verlo en un equipo con tarjeta gráfica: el costo de los 90 mil triángulos del nivel manejable y de los Fiats estacionados (unos 60 en el centro de Temuco, 2,2 mil triángulos cada uno) se midió solo ahí.
+
 - **Vista previa de una aplicación.** La prueba arma una vista previa propia: marco aislado de otro origen, sin almacenamiento y con una política de seguridad que solo deja correr el contenido de la página. En esas condiciones la primera versión daba 6 errores al abrir y quedaba sin programa, el mismo síntoma informado al abrir el archivo dentro de la app de Claude. La versión actual abre con 0 errores y 0 pedidos a la red. La vista previa real de cada aplicación puede imponer otras restricciones, que esta prueba no cubre.
 
 ## Límites conocidos
@@ -156,6 +189,7 @@ Verificado solo contra simulaciones:
 - Sin calles en un radio de 2,5 km, o si Overpass no responde, el juego queda en modo libre, sin encargos. Si la respuesta llega tarde, los encargos aparecen durante la partida.
 - Dentro de un marco aislado, los enlaces de la pantalla inicial pueden quedar sin efecto, porque el marco decide si deja abrir otras páginas.
 - La tipografía Overpass dibuja el punto medio sin ancho. El juego lo usa como separador, así que ese carácter se dibuja con la tipografía de respaldo del sistema.
+- El Fiat 600 necesita `DecompressionStream` para desempaquetar su geometría (Chrome 80, Edge 80, Firefox 113 y Safari 16.4 en adelante). Sin él, el auto no se puede elegir y la ciudad queda sin Fiats; el juego lo dice en pantalla. Los Fiat del tráfico no encienden sus luces de noche, y los estacionados se dibujan con sombreado fijo, sin tinte nocturno aparte del de la malla.
 
 ## Datos y condiciones de uso
 
@@ -176,6 +210,11 @@ Verificado solo contra simulaciones:
 El código de Ruta Sur se publica bajo la licencia MIT (ver `LICENSE`). Las obras incluidas conservan sus propias licencias, listadas arriba.
 
 ## Cambios
+
+**0.16.0**
+
+- Fiat 600 D (1960-1964) para conducir: segundo vehículo del menú, con su color a elegir, cabina con volante y espejos, luces de noche, encargos a su medida, cuentavueltas y sonido propios. Su física trae arrastre, limitador y aceleración lateral propios, y un codo en la curva de par para el motor a gasolina.
+- Fiats en la calle: uno de cada cinco autos estacionados y parte del tráfico, en niveles de detalle según la distancia. El archivo crece 0,9 MB por la geometría del auto.
 
 **0.15.0**
 
