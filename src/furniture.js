@@ -107,23 +107,35 @@ export function roadSign( solid, sign, x, z, yaw, cell, size = 0.75, h = 2.2 ) {
 
 }
 
-// Semáforo: poste con cabezal de tres lámparas, con la que está encendida según `lit` ('red' | 'green').
+// Semáforo: poste en la esquina con un brazo sobre la calle, del que cuelga el cabezal grande
+// (tres lámparas de 30 cm sobre fondo negro), más un cabezal chico en el poste para quien está
+// junto a él. `arm` es cuánto se mete el brazo sobre la calzada (hacia la izquierda del rumbo).
 // Devuelve el rango de vértices de cada lámpara en `glow`, para encenderlas y apagarlas después.
 export const LAMP_COLORS = { red: F.red, amber: F.amber, green: F.green, off: F.off };
-export function trafficLight( solid, decor, glow, x, z, yaw, lit = 'red' ) {
+export function trafficLight( solid, decor, glow, x, z, yaw, lit = 'red', arm = 4 ) {
 
-	const H = 3.6;
-	boxAt( solid, x, z, yaw, 0.14, 0.14, 0, H, F.steel, 0.7 );
-	boxAt( decor, x, z, yaw, 0.3, 0.3, H - 1.05, H + 0.05, F.dark, 0.6, - 0.12 );
-	const lamps = [ [ 'red', H - 0.2 ], [ 'amber', H - 0.5 ], [ 'green', H - 0.8 ] ], out = [];
-	for ( const [ name, y ] of lamps ) {
+	const H = 5.6, out = [];
+	boxAt( solid, x, z, yaw, 0.2, 0.2, 0, H, F.steel, 0.7 );
+	// brazo: del poste hacia la calle, con un refuerzo diagonal insinuado por un tramo corto
+	boxAt( decor, x, z, yaw, 0.14, arm + 0.1, H - 0.25, H - 0.1, F.steel, 0.7, 0, - arm / 2 );
+	boxAt( decor, x, z, yaw, 0.1, 0.1, H - 1.3, H - 0.25, F.steel, 0.7, 0, - 0.3 );
+	// cabezal grande colgado del brazo: fondo negro y tres lámparas que miran a quien viene (-rumbo)
+	const head = ( dl, dw, w, h, top ) => {
 
-		const v0 = glow.count;
-		boxAt( glow, x, z, yaw, 0.22, 0.08, y - 0.1, y + 0.1, name === lit ? LAMP_COLORS[ name ] : F.off, 1, - 0.12, - 0.19 );
-		out.push( { lamp: name, v0, v1: glow.count } );
+		boxAt( decor, x, z, yaw, 0.36, w, top - h, top, F.dark, 0.5, dl, dw );
+		const lamps = [ [ 'red', top - h * 0.18 ], [ 'amber', top - h * 0.5 ], [ 'green', top - h * 0.82 ] ], r = h * 0.15;
+		for ( const [ name, y ] of lamps ) {
 
-	}
+			const v0 = glow.count;
+			boxAt( glow, x, z, yaw, 0.12, 2 * r, y - r, y + r, name === lit ? LAMP_COLORS[ name ] : F.off, 1, dl - 0.22, dw );
+			out.push( { lamp: name, v0, v1: glow.count } );
 
+		}
+
+	};
+
+	head( 0, - arm + 0.3, 0.7, 1.8, H - 0.25 );   // sobre la calle: cabezal de 1,8 m con lámparas de medio metro
+	head( 0, 0, 0.4, 1.0, 3.3 );                   // en el poste
 	return out;
 
 }

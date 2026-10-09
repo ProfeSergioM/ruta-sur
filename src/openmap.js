@@ -334,6 +334,9 @@ export function openCity( roads, buildings, geo ) {
 
 }
 
+// Grupo de un semáforo según la orientación de la vía: 0 si va más de este a oeste, 1 si va más de norte a sur
+export const signalGroup = ( ux, uz ) => Math.abs( ux ) >= Math.abs( uz ) ? 0 : 1;
+
 // Cruces: puntos que comparten dos vías o más (o donde una vía toca el interior de otra).
 // Cada cruce guarda sus aproximaciones: hacia dónde sale cada vía y con qué ancho.
 export function findCrossings( ways ) {
@@ -392,7 +395,14 @@ export function chunkIndex( city, size = OPEN.chunk ) {
 
 	} );
 	( city.trees || [] ).forEach( ( t, ti ) => get( chunkOf( t.x, size ), chunkOf( t.z, size ) ).trees.push( ti ) );
-	( city.crossings || [] ).forEach( ( c, ci ) => get( chunkOf( c.x, size ), chunkOf( c.z, size ) ).crossings.push( ci ) );
+	// un cruce va en todos los trozos que sus semáforos y señales pueden tocar (hasta 16 m del centro);
+	// cada pieza se construye solo en el trozo que la contiene
+	( city.crossings || [] ).forEach( ( c, ci ) => {
+
+		const m = 16;
+		for ( let i = chunkOf( c.x - m, size ); i <= chunkOf( c.x + m, size ); i ++ ) for ( let j = chunkOf( c.z - m, size ); j <= chunkOf( c.z + m, size ); j ++ ) get( i, j ).crossings.push( ci );
+
+	} );
 	city.index = map; city.chunk = size;
 	return map;
 
@@ -617,6 +627,18 @@ export function buildOpenChunk( city, i, j ) {
 	}
 
 	// cruces: semáforos donde se encuentran dos vías principales; discos Pare donde una menor llega a una principal
+	const onRoad = ( x, z ) => {
+
+		for ( let s = 0; s < segs.length; s += 2 ) {
+
+			const o = city.ways[ segs[ s ] ], k = segs[ s + 1 ];
+			if ( distToSegment( x, z, o.pts[ k ], o.pts[ k + 1 ] ) < o.width / 2 + 0.3 ) return true;
+
+		}
+
+		return false;
+
+	};
 	for ( const ci of entry.crossings || [] ) {
 
 		const c = city.crossings[ ci ];
@@ -625,8 +647,8 @@ export function buildOpenChunk( city, i, j ) {
 		const widest = Math.max( ...c.approaches.map( a => a.width ) );
 		if ( majorWays.size >= 2 ) {
 
-			// la vía principal de id menor forma el grupo 0 (parte en verde); las demás, el 1 (mismo convenio que signals.js)
-			const majorIds = [ ...majorWays ].map( wi => city.ways[ wi ].id ).sort( ( p, q ) => p - q );
+			// las vías se reparten en dos grupos por su orientación: las que van más de este a oeste
+			// parten en verde (grupo 0), las que van más de norte a sur en rojo (el mismo convenio que signals.js)
 			const ckey = `${ Math.round( c.x * 5 ) },${ Math.round( c.z * 5 ) }`;
 			for ( const a of majors ) {
 
@@ -634,9 +656,11 @@ export function buildOpenChunk( city, i, j ) {
 				const other = Math.max( ...c.approaches.filter( b => b.wi !== a.wi ).map( b => b.width ) );
 				const x = c.x + a.ux * ( other / 2 + SIDEWALK + 0.4 ) + a.uz * ( a.width / 2 + 0.5 );
 				const z = c.z + a.uz * ( other / 2 + SIDEWALK + 0.4 ) - a.ux * ( a.width / 2 + 0.5 );
-				if ( ! within( x, z ) || ! free( x, z ) ) continue;
-				const group = city.ways[ a.wi ].id === majorIds[ 0 ] ? 0 : 1;
-				for ( const l of trafficLight( solid, decor, glow, x, z, Math.atan2( a.ux, a.uz ), group === 0 ? 'green' : 'red' ) ) signalLamps.push( { key: ckey, group, ...l } );
+				// nunca sobre una calzada: en una avenida de dos calzadas, la esquina de una cae dentro de la otra
+				if ( ! within( x, z ) || ! free( x, z ) || onRoad( x, z ) ) continue;
+				const group = signalGroup( a.ux, a.uz );
+				const arm = Math.min( 5, a.width / 2 + 0.5 - 1.4 ); // el cabezal cuelga sobre el carril de quien llega
+				for ( const l of trafficLight( solid, decor, glow, x, z, Math.atan2( a.ux, a.uz ), group === 0 ? 'green' : 'red', arm ) ) signalLamps.push( { key: ckey, group, ...l } );
 				counts.lights ++; objects.push( { kind: 'semaforo', x, z, group } );
 
 			}
@@ -647,7 +671,7 @@ export function buildOpenChunk( city, i, j ) {
 
 				const x = c.x + a.ux * ( widest / 2 + SIDEWALK + 1.5 ) + a.uz * ( a.width / 2 + 0.45 );
 				const z = c.z + a.uz * ( widest / 2 + SIDEWALK + 1.5 ) - a.ux * ( a.width / 2 + 0.45 );
-				if ( ! within( x, z ) || ! free( x, z ) ) continue;
+				if ( ! within( x, z ) || ! free( x, z ) || onRoad( x, z ) ) continue;
 				roadSign( solid, sign, x, z, Math.atan2( a.ux, a.uz ), SIGNS.pare, 0.7 );
 				counts.signs ++; objects.push( { kind: 'senal', x, z } );
 

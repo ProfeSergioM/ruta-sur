@@ -30,13 +30,15 @@ const H = 1 / 60;
 	report( 'Entre un verde y el otro hay un momento con todo en rojo', bothRed > 0 && Math.abs( bothRed * 0.1 - 2 * CYCLE.allRed ) < 0.3, `${ ( bothRed * 0.1 ).toFixed( 1 ) } s por ciclo` );
 	report( 'El verde dura lo que dice el ciclo y la secuencia es verde, ámbar, rojo', Math.abs( green0 * 0.1 - CYCLE.green ) < 0.2 && seq.join( ',' ) === 'green,amber,red', seq.join( ',' ) );
 	report( 'El ciclo da la vuelta', phaseState( PERIOD + 3, 0 ) === phaseState( 3, 0 ) && phaseState( - 1, 1 ) === phaseState( PERIOD - 1, 1 ) );
-	report( 'La vía principal de id menor va en el grupo 0; las demás en el 1; una menor no tiene grupo', groupOfWay( [ 5, 9 ], 5 ) === 0 && groupOfWay( [ 5, 9 ], 9 ) === 1 && groupOfWay( [], 3 ) === - 1 );
+	const fake = { groups: new Map( [ [ 5, 0 ], [ 9, 1 ] ] ) };
+	report( 'Las vías de este a oeste van en el grupo 0, las de norte a sur en el 1, y una vía ajena al cruce no tiene grupo', groupOfWay( fake, 5 ) === 0 && groupOfWay( fake, 9 ) === 1 && groupOfWay( fake, 3 ) === - 1 );
 }
 
 // --- cruces de la ciudad de pruebas
 const S = new Signals( g );
 report( 'La ciudad de pruebas tiene cruces con semáforo (avenida con avenida) y con Pare (calle con avenida)', S.lights > 0 && S.stops > 0, `${ S.lights } semáforos, ${ S.stops } Pare` );
 report( 'Cada semáforo reparte dos vías principales o más; cada Pare tiene una principal y calles menores', S.crossings.every( c => c.kind === 'light' ? c.majorIds.length >= 2 : c.majorIds.length === 1 && c.minorIds.length > 0 ) );
+report( 'En cada semáforo las vías principales quedan en los dos grupos (se cruzan)', S.crossings.filter( c => c.kind === 'light' ).every( c => new Set( c.majorIds.map( id => c.groups.get( id ) ) ).size === 2 ) );
 report( 'Los cruces quedan ligados a los nodos del grafo', S.byNode.size >= S.crossings.length, `${ S.byNode.size } nodos` );
 const light = S.crossings.find( c => c.kind === 'light' ), stop = S.crossings.find( c => c.kind === 'stop' );
 report( 'Un Pare deja pasar a la principal y detiene a la menor', S.ruleFor( stop, stop.majorIds[ 0 ], 0 ) === 'go' && S.ruleFor( stop, stop.minorIds[ 0 ], 0 ) === 'stop' );

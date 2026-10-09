@@ -84,7 +84,7 @@ Todo lo que viste el mapa abierto sale de datos abiertos o se genera en el momen
 - **Texturas.** La calzada, la vereda, el pasto y las fachadas llevan texturas de grano dibujadas en un lienzo al abrir el juego: asfalto con piedras claras, veredas de baldosas, pasto moteado y fachadas con una ventana por celda de 4 m por piso. Son texturas de luminancia que el color de cada vértice tiñe. Las de las calles se repiten cada 6 m a lo largo, con coordenadas acumuladas tramo a tramo para que no se corten en las esquinas; las de las paredes cuentan celdas enteras por pared, así ninguna ventana queda partida. La línea central va discontinua, con una textura de transparencia.
 - **Plazas, parques y agua.** La misma consulta que trae los edificios pide las áreas verdes (`leisure`, `landuse`, `natural`) y el agua (`natural=water`, riberas). Se dibujan como manchas sobre el suelo. Los bosques y parques reciben árboles repartidos por adentro, más densos en los bosques.
 - **Árboles y faroles.** Los árboles que OpenStreetMap tiene mapeados uno por uno (`natural=tree`) aparecen donde están. Además, las calles de 7 m o más reciben árboles de vereda cada 16 m, con huecos al azar, y las vías de 8 m o más (terciarias y mayores) faroles cada 34 m alternando de lado. Ninguno se planta sobre un edificio, sobre el agua ni en un cruce. El tronco y el poste chocan; la copa y el brazo del farol no.
-- **Mobiliario urbano.** Las calles menores llevan postes de luz cada 28 m, alternando de lado. Las vías principales (terciarias y mayores) llevan autos estacionados junto a la solera con dos ruedas sobre la vereda, en el sentido de su lado y con huecos al azar; paraderos abiertos hacia la calle con su señal; y señales de velocidad máxima, una por sentido. En los cruces, dos vías principales reciben semáforos en las esquinas, y una calle menor que llega a una principal recibe un disco Pare. Los semáforos funcionan: cada cruce reparte sus vías en dos grupos que se turnan el verde (14 s de verde, 3 de ámbar y 1 con todo en rojo), con un desfase propio por cruce, y las lámparas se pintan según ese estado. El tráfico frena en rojo, pasa en ámbar solo si ya no alcanza a detenerse, y ante un Pare se detiene un segundo antes de seguir. Si el camión cruza la línea de detención con luz roja a más de 1 m/s, paga una multa de $ 30.000. Todo sale de `signals.js`, que reconoce los cruces desde la red vial, así que la ciudad de pruebas (sin semáforos dibujados) no los aplica. Las plazas tienen bancas y un basurero. Nada se planta encima de otra cosa, en un cruce, sobre un edificio ni sobre el agua. Las placas de las señales salen de un atlas dibujado al vuelo (Pare, 50, paradero y no estacionar).
+- **Mobiliario urbano.** Las calles menores llevan postes de luz cada 28 m, alternando de lado. Las vías principales (terciarias y mayores) llevan autos estacionados junto a la solera con dos ruedas sobre la vereda, en el sentido de su lado y con huecos al azar; paraderos abiertos hacia la calle con su señal; y señales de velocidad máxima, una por sentido. En los cruces, dos vías principales reciben semáforos en las esquinas (poste con brazo sobre la calle y cabezal grande), y una calle menor que llega a una principal recibe un disco Pare. Los semáforos funcionan: cada cruce reparte sus vías en dos grupos según su orientación, que se turnan el verde (14 s de verde, 3 de ámbar y 1 con todo en rojo), con un desfase propio por cruce, y las lámparas se pintan según ese estado. El tráfico frena en rojo, pasa en ámbar solo si ya no alcanza a detenerse, y ante un Pare se detiene un segundo antes de seguir. Si el camión cruza la línea de detención con luz roja a más de 1 m/s, paga una multa de $ 30.000. Todo sale de `signals.js`, que reconoce los cruces desde la red vial, así que la ciudad de pruebas (sin semáforos dibujados) no los aplica. Las plazas tienen bancas y un basurero. Nada se planta encima de otra cosa, en un cruce, sobre un edificio ni sobre el agua. Las placas de las señales salen de un atlas dibujado al vuelo (Pare, 50, paradero y no estacionar).
 - **Cerros.** Una línea de lomas brumosas rodea la ciudad en el horizonte, a la distancia que la calidad elegida alcanza a dibujar. Es decorativa: no sale de ningún modelo de elevación, y por eso no coincide con los cerros reales.
 
 ### Choques
@@ -107,7 +107,7 @@ La red vial sale de la misma consulta a OpenStreetMap. Con ella el juego elige d
 
 ```
 npm install
-npm test          # pruebas numéricas, sin navegador (358 comprobaciones)
+npm test          # pruebas numéricas, sin navegador (360 comprobaciones)
 npm run e2e       # el juego completo en Chromium sin interfaz, 203 comprobaciones (necesita: npm i -D playwright)
 ```
 
@@ -166,6 +166,12 @@ Verificado solo contra simulaciones:
 El código de Ruta Sur se publica bajo la licencia MIT (ver `LICENSE`). Las obras incluidas conservan sus propias licencias, listadas arriba.
 
 ## Cambios
+
+**0.11.1**
+
+- Semáforos más visibles: poste en la esquina con brazo sobre la calle y un cabezal de 1,8 m con lámparas de medio metro, más un cabezal chico en el poste; la lámpara encendida brilla también de día.
+- Ningún semáforo ni señal queda sobre una calzada (en una avenida de dos calzadas, la esquina de una caía dentro de la otra), y los cruces en el borde de un trozo ya no pierden postes.
+- Los grupos de un semáforo salen de la orientación de las vías (las de este a oeste parten en verde), y los cruces vecinos de una misma avenida van sincronizados.
 
 **0.11.0**
 

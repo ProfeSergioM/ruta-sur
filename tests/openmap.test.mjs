@@ -202,6 +202,17 @@ const triArea = ( poly, tris ) => { let a = 0; for ( let i = 0; i < tris.length;
 		report( 'Cada pieza queda anotada con su tipo y posición (más los árboles y faroles)', tot.objects === tot.poles + tot.parked + tot.stops + tot.signs + tot.lights + tot.benches + tot.trees + tot.lamps + ( kinds.basurero || 0 ), Object.entries( kinds ).map( ( [ k, v ] ) => `${ k } ${ v }` ).join( ', ' ) );
 		report( 'Lo sólido, las placas y la decoración van en capas aparte, con contenido', tot.solid > 0 && tot.sign > 0 && tot.decor > 0 && RAY_LAYERS.includes( 'solid' ) && ! RAY_LAYERS.includes( 'decor' ) );
 		report( 'Ningún auto estacionado invade la calzada', parkedChecked > 50 && parkedOnLane === 0, `${ parkedOnLane } de ${ parkedChecked }` );
+		// ningún semáforo ni señal queda sobre una calzada (en una avenida de dos calzadas, la esquina de una cae en la otra)
+		let onRoad = 0, checked = 0;
+		for ( const [ k ] of index ) for ( const o of buildOpenChunk( city, ...k.split( ',' ).map( Number ) ).objects ) {
+
+			if ( o.kind !== 'semaforo' && o.kind !== 'senal' ) continue;
+			checked ++;
+			for ( const w of city.ways ) for ( let s = 0; s < w.pts.length - 1; s ++ ) { const a = w.pts[ s ], b = w.pts[ s + 1 ], ex = b.x - a.x, ez = b.z - a.z, l2 = ex * ex + ez * ez || 1, t = Math.max( 0, Math.min( 1, ( ( o.x - a.x ) * ex + ( o.z - a.z ) * ez ) / l2 ) ); if ( Math.hypot( o.x - a.x - ex * t, o.z - a.z - ez * t ) < w.width / 2 + 0.3 ) { onRoad ++; s = 1e9; break; } }
+
+		}
+
+		report( 'Ningún semáforo ni señal queda sobre una calzada', checked > 20 && onRoad === 0, `${ onRoad } de ${ checked }` );
 		const majors = city.crossings.filter( c => new Set( c.approaches.filter( a => a.width >= 8 ).map( a => a.wi ) ).size >= 2 ).length;
 		const mixed = city.crossings.filter( c => c.approaches.some( a => a.width >= 8 ) && c.approaches.some( a => a.width < 8 ) ).length;
 		report( 'Los cruces se reconocen: entre vías principales (semáforos) y de una menor a una principal (Pare)', city.crossings.length > 30 && majors > 5 && mixed > 5 && city.crossings.every( c => c.ways.length >= 2 && c.approaches.length >= 3 ), `${ city.crossings.length } cruces, ${ majors } principal con principal, ${ mixed } menor con principal` );

@@ -364,12 +364,13 @@ export class OpenWorld {
 			for ( const l of c.lamps.list ) {
 
 				const cr = S.atKey( l.key );
-				const state = cr ? S.state( cr, cr.majorIds[ l.group === 0 ? 0 : cr.majorIds.length - 1 ], time ) : ( l.group === 0 ? 'green' : 'red' );
+				const state = cr ? S.stateOfGroup( cr, l.group, time ) : ( l.group === 0 ? 'green' : 'red' );
 				const lit = state === l.lamp;
 				if ( l.lit === lit ) continue;
 				l.lit = lit; changed = true;
-				const col = lit ? LAMP_COLORS[ l.lamp ] : LAMP_COLORS.off;
-				for ( let v = l.v0; v < l.v1; v ++ ) { arr[ v * 3 ] = col[ 0 ]; arr[ v * 3 + 1 ] = col[ 1 ]; arr[ v * 3 + 2 ] = col[ 2 ]; }
+				// la lámpara encendida va más brillante que el color base: compensa el tinte de día del material
+				const col = lit ? LAMP_COLORS[ l.lamp ] : LAMP_COLORS.off, k = lit ? 1.4 : 1;
+				for ( let v = l.v0; v < l.v1; v ++ ) { arr[ v * 3 ] = col[ 0 ] * k; arr[ v * 3 + 1 ] = col[ 1 ] * k; arr[ v * 3 + 2 ] = col[ 2 ] * k; }
 
 			}
 

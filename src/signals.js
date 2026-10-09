@@ -7,7 +7,7 @@
 // nodo; el camión recibe multa si cruza la línea con luz roja. Sin Three.js:
 // el mundo abierto pinta las lámparas según el mismo estado.
 
-import { findCrossings, hashId, ROAD_WIDTH } from './openmap.js';
+import { findCrossings, hashId, ROAD_WIDTH, signalGroup } from './openmap.js';
 import { nearestSegment } from './osm.js';
 
 export const CYCLE = { green: 14, amber: 3, allRed: 1 };   // segundos por fase
@@ -18,11 +18,11 @@ export const RED_LIGHT_FINE = 30000;
 // Clave de un cruce por su posición, compartida con las lámparas del mapa abierto (a 20 cm)
 export const crossingKey = ( x, z ) => `${ Math.round( x * 5 ) },${ Math.round( z * 5 ) }`;
 
-// Grupo de una vía en un cruce con semáforo: la principal de id menor va en el 0; las demás en el 1
-export function groupOfWay( majorIds, wayId ) {
+// Grupo de una vía en un cruce con semáforo, por su orientación (ver signalGroup): -1 si la vía no llega al cruce
+export function groupOfWay( cr, wayId ) {
 
-	if ( majorIds.length === 0 ) return - 1;
-	return wayId === majorIds[ 0 ] ? 0 : 1;
+	const g = cr.groups.get( wayId );
+	return g === undefined ? - 1 : g;
 
 }
 
@@ -65,7 +65,11 @@ export class Signals {
 			else if ( majors.length === 1 && minors.length > 0 ) kind = 'stop';
 			if ( ! kind ) continue;
 			const widest = Math.max( ...c.approaches.map( a => a.width ) );
-			const cr = { x: c.x, z: c.z, kind, majorIds: majors, minorIds: minors, offset: hashId( Math.round( c.x ) * 7 + Math.round( c.z ) * 13 ) * PERIOD, stopBack: widest / 2 + 1.5, key: crossingKey( c.x, c.z ) };
+			const groups = new Map();
+			for ( const a of c.approaches ) { const id = ways[ a.wi ].id; if ( ! groups.has( id ) ) groups.set( id, signalGroup( a.ux, a.uz ) ); }
+			const cr = { x: c.x, z: c.z, kind, majorIds: majors, minorIds: minors, groups, offset: hashId( Math.round( c.x ) * 7 + Math.round( c.z ) * 13 ) * PERIOD, stopBack: widest / 2 + 1.5, key: crossingKey( c.x, c.z ) };
+			// los cruces vecinos (las dos calzadas de una avenida) van sincronizados: comparten desfase
+			for ( const o of this.crossings ) if ( Math.hypot( o.x - c.x, o.z - c.z ) < 40 ) { cr.offset = o.offset; break; }
 			this.crossings.push( cr );
 			this.byKey.set( cr.key, cr );
 			if ( kind === 'light' ) this.lights ++; else this.stops ++;
@@ -85,10 +89,12 @@ export class Signals {
 	state( cr, wayId, time ) {
 
 		if ( cr.kind !== 'light' ) return 'green';
-		const group = groupOfWay( cr.majorIds, wayId );
-		return phaseState( time + cr.offset, group < 0 ? 1 : group );
+		const group = groupOfWay( cr, wayId );
+		return this.stateOfGroup( cr, group < 0 ? 1 : group, time );
 
 	}
+
+	stateOfGroup( cr, group, time ) { return cr.kind !== 'light' ? 'green' : phaseState( time + cr.offset, group ); }
 
 	// Qué debe hacer un vehículo que llega por `wayId` al cruce: 'go' | 'stop' (Pare) | el color de la luz
 	ruleFor( cr, wayId, time ) {
@@ -138,7 +144,7 @@ export class Signals {
 
 		if ( ! this._armed || this._armed.cr !== cr || this._armed.fired ) return null;
 		// acaba de cruzar la línea de detención (el frente del camión está a stopBack del centro)
-		if ( along <= cr.stopBack + 1 && along > - 8 && Math.abs( t.v ) > 1 && groupOfWay( cr.majorIds, wayId ) >= 0 ) {
+		if ( along <= cr.stopBack + 1 && along > - 8 && Math.abs( t.v ) > 1 && cr.majorIds.includes( wayId ) ) {
 
 			this._armed.fired = true;
 			return this.state( cr, wayId, time ) === 'red' ? 'red' : null;
