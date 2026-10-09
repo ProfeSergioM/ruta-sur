@@ -467,6 +467,20 @@ export function buildOpenChunk( city, i, j ) {
 	// árboles: los mapeados, los de los parques y bosques, y los de vereda a lo largo de las calles
 	let count = 0;
 	const MAX_TREES = 160;
+	// a menos de esta distancia de una calzada no se planta nada: ni un árbol de un parque que
+	// OpenStreetMap dibuja sobre la calle, ni un árbol mapeado al borde de la solera
+	const onRoad = ( x, z, margin = 0.3 ) => {
+
+		for ( let s = 0; s < segs.length; s += 2 ) {
+
+			const o = city.ways[ segs[ s ] ], k = segs[ s + 1 ];
+			if ( distToSegment( x, z, o.pts[ k ], o.pts[ k + 1 ] ) < o.width / 2 + margin ) return true;
+
+		}
+
+		return false;
+
+	};
 	const free = ( x, z ) => {
 
 		if ( ! within( x, z ) ) return false;
@@ -476,7 +490,7 @@ export function buildOpenChunk( city, i, j ) {
 
 	};
 
-	const plant = ( x, z, seed ) => { if ( count < MAX_TREES && free( x, z ) ) { tree( decor, x, z, seed, solid ); count ++; objects.push( { kind: 'arbol', x, z } ); } };
+	const plant = ( x, z, seed ) => { if ( count < MAX_TREES && free( x, z ) && ! onRoad( x, z, 0.8 ) ) { tree( decor, x, z, seed, solid ); count ++; objects.push( { kind: 'arbol', x, z } ); } };
 	for ( const ti of entry.trees || [] ) { const t = city.trees[ ti ]; plant( t.x, t.z, t.id ); }
 	for ( const g of greens ) {
 
@@ -497,7 +511,7 @@ export function buildOpenChunk( city, i, j ) {
 
 			const seed = g.id * 17 + b * 101, th = hashId( seed ) * Math.PI * 2, r = 4 + 5 * hashId( seed + 1 );
 			const x = g.cx + Math.cos( th ) * r, z = g.cz + Math.sin( th ) * r;
-			if ( ! inside( x, z, g.poly ) || ! free( x, z ) ) continue;
+			if ( ! inside( x, z, g.poly ) || ! free( x, z ) || onRoad( x, z, 0.8 ) ) continue;
 			bench( solid, x, z, th + Math.PI / 2 ); counts.benches ++; objects.push( { kind: 'banca', x, z } );
 			if ( b === 0 ) { const bx = x + Math.cos( th ) * 1.6, bz = z + Math.sin( th ) * 1.6; if ( inside( bx, bz, g.poly ) ) { bin( solid, bx, bz, th ); objects.push( { kind: 'basurero', x: bx, z: bz } ); } }
 
@@ -627,18 +641,6 @@ export function buildOpenChunk( city, i, j ) {
 	}
 
 	// cruces: semáforos donde se encuentran dos vías principales; discos Pare donde una menor llega a una principal
-	const onRoad = ( x, z ) => {
-
-		for ( let s = 0; s < segs.length; s += 2 ) {
-
-			const o = city.ways[ segs[ s ] ], k = segs[ s + 1 ];
-			if ( distToSegment( x, z, o.pts[ k ], o.pts[ k + 1 ] ) < o.width / 2 + 0.3 ) return true;
-
-		}
-
-		return false;
-
-	};
 	for ( const ci of entry.crossings || [] ) {
 
 		const c = city.crossings[ ci ];

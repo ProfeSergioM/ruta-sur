@@ -161,33 +161,44 @@ export function createTruckModel( spec, name = 'Ruta Sur' ) {
 	beam.position.set( 0, 0.06, zFront - 13.5 );
 	beam.renderOrder = 2;
 	tractor.add( beam );
-	const cabLen = 2.25, cabTop = 3.5;
+	// la cabina de un tracto sube a 3,5 m; un camión chico trae sus medidas en spec.cab
+	const cabSpec = spec.cab || {}, cabTop = cabSpec.top || 3.5, dy = cabTop - 3.5, cabLen = cabSpec.len || ( cabTop < 3 ? 1.9 : 2.25 );
 	exterior.add( box( W - 0.04, cabTop - 0.95, cabLen, cabMat, 0, cabY( ( cabTop + 0.95 ) / 2 ), cabZ( zFront + cabLen / 2 ) ) );
 	// parabrisas, ventanas, parrilla y parachoques
-	exterior.add( box( W - 0.34, 0.95, 0.04, glass, 0, cabY( 2.72 ), cabZ( zFront - 0.01 ) ) );
-	exterior.add( box( 0.04, 0.72, 0.95, glass, - W / 2 + 0.01, cabY( 2.72 ), cabZ( zFront + 0.75 ) ) );
-	exterior.add( box( 0.04, 0.72, 0.95, glass, W / 2 - 0.01, cabY( 2.72 ), cabZ( zFront + 0.75 ) ) );
-	exterior.add( box( W - 0.7, 0.75, 0.05, steel, 0, cabY( 1.62 ), cabZ( zFront - 0.015 ) ) );
+	exterior.add( box( W - 0.34, 0.95, 0.04, glass, 0, cabY( 2.72 + dy ), cabZ( zFront - 0.01 ) ) );
+	exterior.add( box( 0.04, 0.72, 0.95, glass, - W / 2 + 0.01, cabY( 2.72 + dy ), cabZ( zFront + 0.75 ) ) );
+	exterior.add( box( 0.04, 0.72, 0.95, glass, W / 2 - 0.01, cabY( 2.72 + dy ), cabZ( zFront + 0.75 ) ) );
+	exterior.add( box( W - 0.7, Math.min( 0.75, 0.75 + dy * 0.5 ), 0.05, steel, 0, cabY( 1.62 + dy * 0.5 ), cabZ( zFront - 0.015 ) ) );
 	exterior.add( box( W, 0.42, 0.3, mat( 'cabDark', { color: C.cabDark } ), 0, cabY( 0.72 ), cabZ( zFront + 0.12 ) ) );
 	const lamp = mat( 'lampWhite', { color: C.lampWhite, emissive: C.lampWhite, emissiveIntensity: 0.6 } );
 	exterior.add( box( 0.36, 0.16, 0.05, lamp, - W / 2 + 0.3, cabY( 0.92 ), cabZ( zFront - 0.02 ) ) );
 	exterior.add( box( 0.36, 0.16, 0.05, lamp, W / 2 - 0.3, cabY( 0.92 ), cabZ( zFront - 0.02 ) ) );
 	// deflector de techo
-	const defl = box( W - 0.3, 0.6, 1.5, cabMat, 0, cabY( cabTop + 0.22 ), cabZ( zFront + 1.35 ) );
-	defl.rotation.x = 0.28;
-	exterior.add( defl );
+	if ( cabSpec.deflector !== false ) {
+
+		const defl = box( W - 0.3, 0.6, 1.5, cabMat, 0, cabY( cabTop + 0.22 ), cabZ( zFront + 1.35 ) );
+		defl.rotation.x = 0.28;
+		exterior.add( defl );
+
+	}
+
 	// espejos
 	for ( const s of [ - 1, 1 ] ) {
 
-		exterior.add( box( 0.1, 0.62, 0.22, steel, s * ( W / 2 + 0.22 ), cabY( 2.75 ), cabZ( zFront + 0.2 ) ) );
-		exterior.add( box( 0.3, 0.05, 0.05, steel, s * ( W / 2 + 0.1 ), cabY( 2.95 ), cabZ( zFront + 0.2 ) ) );
+		exterior.add( box( 0.1, 0.62, 0.22, steel, s * ( W / 2 + 0.22 ), cabY( 2.75 + dy ), cabZ( zFront + 0.2 ) ) );
+		exterior.add( box( 0.3, 0.05, 0.05, steel, s * ( W / 2 + 0.1 ), cabY( 2.95 + dy ), cabZ( zFront + 0.2 ) ) );
 
 	}
 
 	// tubo de escape y estanques
-	const stack = new THREE.Mesh( new THREE.CylinderGeometry( 0.09, 0.09, 2.3, 10 ), mat( 'chrome', { color: C.chrome } ) );
-	stack.position.set( W / 2 - 0.25, 2.3, zFront + cabLen + 0.18 );
-	tractor.add( stack );
+	if ( cabSpec.stack !== false ) {
+
+		const stack = new THREE.Mesh( new THREE.CylinderGeometry( 0.09, 0.09, 2.3, 10 ), mat( 'chrome', { color: C.chrome } ) );
+		stack.position.set( W / 2 - 0.25, 2.3, zFront + cabLen + 0.18 );
+		tractor.add( stack );
+
+	}
+
 	if ( tl ) for ( const s of [ - 1, 1 ] ) {
 
 		const tank = new THREE.Mesh( new THREE.CylinderGeometry( 0.33, 0.33, 1.25, 14 ), mat( 'chrome', { color: C.chrome } ) );
@@ -221,12 +232,12 @@ export function createTruckModel( spec, name = 'Ruta Sur' ) {
 	} else {
 
 		// carrocería del camión rígido
-		const z0 = zFront + cabLen + 0.2, z1 = tr.rearOverhang;
+		const z0 = zFront + cabLen + 0.2, z1 = tr.rearOverhang, bh = cabSpec.bodyHeight || 2.75;
 		const tex = sideTexture( name );
 		const side = new THREE.MeshLambertMaterial( { map: tex } );
 		const plain = mat( 'body', { color: C.body } );
-		const b = new THREE.Mesh( new THREE.BoxGeometry( W, 2.75, z1 - z0 ), [ side, side, plain, mat( 'bodyShade', { color: C.bodyShade } ), plain, plain ] );
-		b.position.set( 0, 1.1 + 2.75 / 2, ( z0 + z1 ) / 2 );
+		const b = new THREE.Mesh( new THREE.BoxGeometry( W, bh, z1 - z0 ), [ side, side, plain, mat( 'bodyShade', { color: C.bodyShade } ), plain, plain ] );
+		b.position.set( 0, 1.1 + bh / 2, ( z0 + z1 ) / 2 );
 		tractor.add( b );
 		const red = mat( 'lampRed', { color: C.lampRed, emissive: C.lampRed, emissiveIntensity: 0.35 } );
 		tractor.add( box( 0.3, 0.12, 0.05, red, - W / 2 + 0.3, 1.0, z1 + 0.01 ), box( 0.3, 0.12, 0.05, red, W / 2 - 0.3, 1.0, z1 + 0.01 ) );
@@ -244,29 +255,29 @@ export function createTruckModel( spec, name = 'Ruta Sur' ) {
 	interior.visible = false;
 	cab.add( interior );
 	const dash = mat( 'dash', { color: C.dash } ), dashL = mat( 'dashLight', { color: C.dashLight } );
-	const eyeX = - 0.55, eyeY = 2.55, eyeZ = zFront + 1.3;
+	const eyeX = - 0.55, eyeY = 2.55 + dy, eyeZ = zFront + 1.3;
 	// tablero
-	interior.add( box( W - 0.1, 0.55, 0.7, dash, 0, cabY( 1.78 ), cabZ( zFront + 0.48 ) ) );
-	interior.add( box( 0.62, 0.2, 0.3, dashL, eyeX, cabY( 2.1 ), cabZ( zFront + 0.6 ) ) );
+	interior.add( box( W - 0.1, 0.55, 0.7, dash, 0, cabY( 1.78 + dy ), cabZ( zFront + 0.48 ) ) );
+	interior.add( box( 0.62, 0.2, 0.3, dashL, eyeX, cabY( 2.1 + dy ), cabZ( zFront + 0.6 ) ) );
 	// pilares, techo y marcos de puerta
 	for ( const s of [ - 1, 1 ] ) {
 
-		const pillar = box( 0.075, 1.5, 0.09, dashL, s * ( W / 2 - 0.06 ), cabY( 2.72 ), cabZ( zFront + 0.08 ) );
+		const pillar = box( 0.075, 1.5, 0.09, dashL, s * ( W / 2 - 0.06 ), cabY( 2.72 + dy ), cabZ( zFront + 0.08 ) );
 		pillar.rotation.x = - 0.08;
 		interior.add( pillar );
-		interior.add( box( 0.06, 1.1, 2.0, dash, s * ( W / 2 - 0.05 ), cabY( 1.5 ), cabZ( zFront + 1.1 ) ) );
-		interior.add( box( 0.1, 1.5, 0.14, dash, s * ( W / 2 - 0.07 ), cabY( 2.72 ), cabZ( zFront + 1.35 ) ) );
+		interior.add( box( 0.06, 1.1, 2.0, dash, s * ( W / 2 - 0.05 ), cabY( 1.5 + dy ), cabZ( zFront + 1.1 ) ) );
+		interior.add( box( 0.1, 1.5, 0.14, dash, s * ( W / 2 - 0.07 ), cabY( 2.72 + dy ), cabZ( zFront + 1.35 ) ) );
 		// Espejos vistos desde adentro. La carcasa mira hacia atrás y gira 21° hacia el
 		// conductor; el vidrio lleva la imagen que dibuja la cámara del espejo.
 		const housing = new THREE.Group();
-		housing.position.set( s * ( W / 2 + 0.3 ), cabY( 2.62 ), cabZ( zFront + 0.22 ) );
+		housing.position.set( s * ( W / 2 + 0.3 ), cabY( 2.62 + dy ), cabZ( zFront + 0.22 ) );
 		housing.rotation.y = - s * 0.37;
 		housing.add( box( 0.3, 0.58, 0.06, steel ) );
 		const glass = new THREE.Mesh( new THREE.PlaneGeometry( 0.24, 0.48 ), new THREE.MeshBasicMaterial( { color: 0x8d9aa4, toneMapped: false } ) );
 		glass.position.z = 0.032;
 		housing.add( glass );
 		interior.add( housing );
-		interior.add( box( 0.34, 0.04, 0.04, steel, s * ( W / 2 + 0.14 ), cabY( 2.86 ), cabZ( zFront + 0.2 ) ) );
+		interior.add( box( 0.34, 0.04, 0.04, steel, s * ( W / 2 + 0.14 ), cabY( 2.86 + dy ), cabZ( zFront + 0.2 ) ) );
 		// anclaje de la cámara del espejo: mira hacia atrás, 7° hacia afuera y 4° hacia abajo
 		const anchor = new THREE.Object3D();
 		anchor.position.copy( housing.position );
@@ -278,11 +289,11 @@ export function createTruckModel( spec, name = 'Ruta Sur' ) {
 
 	}
 
-	interior.add( box( W, 0.12, 2.2, dash, 0, cabY( 3.42 ), cabZ( zFront + 1.1 ) ) );
-	interior.add( box( W - 0.3, 0.14, 0.05, dashL, 0, cabY( 3.3 ), cabZ( zFront + 0.06 ) ) );
+	interior.add( box( W, 0.12, 2.2, dash, 0, cabY( 3.42 + dy ), cabZ( zFront + 1.1 ) ) );
+	interior.add( box( W - 0.3, 0.14, 0.05, dashL, 0, cabY( 3.3 + dy ), cabZ( zFront + 0.06 ) ) );
 	// volante
 	const sw = new THREE.Group();
-	sw.position.set( eyeX, cabY( 2.02 ), cabZ( zFront + 0.92 ) );
+	sw.position.set( eyeX, cabY( 2.02 + dy ), cabZ( zFront + 0.92 ) );
 	sw.rotation.x = - 1.0; // columna inclinada hacia el conductor
 	const swSpin = new THREE.Group();
 	sw.add( swSpin );

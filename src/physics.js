@@ -87,6 +87,37 @@ export const VEHICLES = {
 		},
 		maxCargo: 8500,
 	},
+	reparto: {
+		id: 'reparto',
+		label: 'Camión de reparto',
+		tractor: {
+			wheelbase: 3.4,
+			frontOverhang: 1.0,
+			rearOverhang: 1.9,
+			width: 2.1,
+			track: 1.7,
+			hitch: 0,
+			mass: 3600,
+			maxSteer: 0.8,
+		},
+		trailer: null,
+		// cabina chica, sobre el motor, y furgón bajo: las medidas que no salen de la física
+		cab: { top: 2.75, deflector: false, stack: false, bodyHeight: 2.3 },
+		engine: {
+			power: 110e3,          // 150 hp [W]
+			torque: 420,
+			idle: 750, powerEnd: 2800, redline: 3300,
+			drag: 90,
+			gears: [ 5.4, 3.1, 1.8, 1.0, 0.75 ],
+			reverse: 5.6,
+			final: 5.1,
+			wheelRadius: 0.38,
+			efficiency: 0.9,
+			upLo: 1800, upHi: 2700, down: 1200,
+			driveAxleMax: 5500,
+		},
+		maxCargo: 4500,
+	},
 };
 
 // Parámetros comunes

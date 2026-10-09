@@ -213,6 +213,17 @@ const triArea = ( poly, tris ) => { let a = 0; for ( let i = 0; i < tris.length;
 		}
 
 		report( 'Ningún semáforo ni señal queda sobre una calzada', checked > 20 && onRoad === 0, `${ onRoad } de ${ checked }` );
+		// ni un árbol (los de los parques que OpenStreetMap dibuja sobre la calle, o los mapeados junto a la solera)
+		let treesOnRoad = 0, treesChecked = 0;
+		for ( const [ k ] of index ) for ( const o of buildOpenChunk( city, ...k.split( ',' ).map( Number ) ).objects ) {
+
+			if ( o.kind !== 'arbol' ) continue;
+			treesChecked ++;
+			for ( const w of city.ways ) for ( let s = 0; s < w.pts.length - 1; s ++ ) { const a = w.pts[ s ], b = w.pts[ s + 1 ], ex = b.x - a.x, ez = b.z - a.z, l2 = ex * ex + ez * ez || 1, t = Math.max( 0, Math.min( 1, ( ( o.x - a.x ) * ex + ( o.z - a.z ) * ez ) / l2 ) ); if ( Math.hypot( o.x - a.x - ex * t, o.z - a.z - ez * t ) < w.width / 2 + 0.75 ) { treesOnRoad ++; s = 1e9; break; } }
+
+		}
+
+		report( 'Ningún árbol queda sobre una calzada ni pegado a la solera', treesChecked > 500 && treesOnRoad === 0, `${ treesOnRoad } de ${ treesChecked }` );
 		const majors = city.crossings.filter( c => new Set( c.approaches.filter( a => a.width >= 8 ).map( a => a.wi ) ).size >= 2 ).length;
 		const mixed = city.crossings.filter( c => c.approaches.some( a => a.width >= 8 ) && c.approaches.some( a => a.width < 8 ) ).length;
 		report( 'Los cruces se reconocen: entre vías principales (semáforos) y de una menor a una principal (Pare)', city.crossings.length > 30 && majors > 5 && mixed > 5 && city.crossings.every( c => c.ways.length >= 2 && c.approaches.length >= 3 ), `${ city.crossings.length } cruces, ${ majors } principal con principal, ${ mixed } menor con principal` );

@@ -1,6 +1,6 @@
 # Ruta Sur
 
-Simulador de camiones que corre en el navegador sobre un mapa abierto levantado desde OpenStreetMap: las calles verdaderas de una ciudad, con sus edificios como cajas de colores. El jugador conduce un tracto con semirremolque, o un camión rígido, y reparte cargas entre esquinas.
+Simulador de camiones que corre en el navegador sobre un mapa abierto levantado desde OpenStreetMap: las calles verdaderas de una ciudad, con sus edificios como cajas de colores. El jugador conduce un tracto con semirremolque, un camión rígido o un camión de reparto urbano, y reparte cargas entre esquinas.
 
 Este es un prototipo. Hasta la versión 0.4 manejaba también sobre la malla 3D fotorrealista de Google, que exige una credencial de pago o una cuenta de Cesium ion; la 0.5 deja solo los datos abiertos.
 
@@ -107,8 +107,8 @@ La red vial sale de la misma consulta a OpenStreetMap. Con ella el juego elige d
 
 ```
 npm install
-npm test          # pruebas numéricas, sin navegador (360 comprobaciones)
-npm run e2e       # el juego completo en Chromium sin interfaz, 203 comprobaciones (necesita: npm i -D playwright)
+npm test          # pruebas numéricas, sin navegador (361 comprobaciones)
+npm run e2e       # el juego completo en Chromium sin interfaz, 249 comprobaciones (necesita: npm i -D playwright)
 ```
 
 Las pruebas numéricas cubren el modelo del camión (radios de giro contra la teoría, corredor de giro de la norma europea, aceleración, frenado, pendientes, caja de cambios, bajadas, choques frontales y laterales), la geodesia, la red vial, el mapa abierto (triangulación, prismas, trozos, memoria de edificios) y los encargos. `tests/osm-real.test.mjs` usa una muestra real del centro de Temuco (`tests/fixtures/temuco-centro.json`, © OpenStreetMap contributors, ODbL). El entorno de desarrollo no llega a Overpass, así que no hay una muestra real de edificios: `tests/open-fixture.mjs` reparte plantas sintéticas en las manzanas de esa muestra, con las etiquetas que usa el juego.
@@ -166,6 +166,11 @@ Verificado solo contra simulaciones:
 El código de Ruta Sur se publica bajo la licencia MIT (ver `LICENSE`). Las obras incluidas conservan sus propias licencias, listadas arriba.
 
 ## Cambios
+
+**0.12.0**
+
+- Camión de reparto urbano: 6,3 m de largo, 2,1 m de ancho, 3,6 t en vacío y 4,5 t de carga útil, motor de 150 hp con caja de cinco marchas y cabina baja sobre el motor. Las cargas se escalan a su capacidad. Entra en calles donde los otros dos no caben.
+- Ningún árbol queda sobre una calzada ni pegado a la solera: los de los parques que OpenStreetMap dibuja sobre la calle y los mapeados al borde se omiten.
 
 **0.11.1**
 

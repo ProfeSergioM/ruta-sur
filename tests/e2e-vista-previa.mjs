@@ -92,7 +92,7 @@ if ( run( 'estricta' ) ) {
 	let m = await menu( frame );
 	R.check( 'Abre sin errores', log.errors.length === 0, log.errors.length ? log.errors.slice( 0, 3 ).join( ' | ' ) : '0 errores' );
 	R.check( 'Abre sin pedir nada a la red', outside( log ).length === 0, outside( log ).slice( 0, 3 ).join( ' ' ) || '0 pedidos' );
-	R.check( 'El programa arranca y la pantalla inicial queda completa', m.arranco && m.estado === 'menu' && m.ciudades === 4 && m.camiones === 2 && m.calidades === 3, `${ m.ciudades } ciudades, ${ m.camiones } camiones, ${ m.calidades } calidades` );
+	R.check( 'El programa arranca y la pantalla inicial queda completa', m.arranco && m.estado === 'menu' && m.ciudades === 4 && m.camiones === 3 && m.calidades === 3, `${ m.ciudades } ciudades, ${ m.camiones } camiones, ${ m.calidades } calidades` );
 	R.check( 'Sin avisos de falla a la vista', m.avisoFijo === 'none' && ! m.falla );
 	R.check( 'Las tipografías incluidas se instalan aunque la política prohíba cargar tipografías', m.overpass, m.fuentes );
 	R.check( 'La pantalla inicial avisa que está dentro de otra aplicación y qué hacer para el mapa real', /dentro de otra aplicación/.test( m.marco ) && /ciudad de pruebas funciona/.test( m.marco ) && /Chrome o Edge/.test( m.marco ), m.marco.slice( 0, 60 ) + '…' );
@@ -206,7 +206,7 @@ if ( run( 'confianza' ) ) {
 	console.log( '\n# Política estricta que además exige tipos de confianza para insertar HTML' );
 	const { browser, page, frame, log } = await open( { csp: STRICT + "; require-trusted-types-for 'script'" } );
 	const m = await menu( frame );
-	R.check( 'Arranca y la pantalla inicial queda completa', m.arranco && m.ciudades === 4 && m.camiones === 2 && m.calidades === 3 && ! m.falla, `${ m.ciudades } ciudades` );
+	R.check( 'Arranca y la pantalla inicial queda completa', m.arranco && m.ciudades === 4 && m.camiones === 3 && m.calidades === 3 && ! m.falla, `${ m.ciudades } ciudades` );
 	await frame.click( '#pista' );
 	await waitState( page, frame, 'driving', 120000, 'conducción en la ciudad de pruebas' );
 	R.check( 'La ciudad de pruebas carga', await game( frame, () => window.__rutaSur.truck.grounded ) );
@@ -242,7 +242,7 @@ for ( const how of [ 'blob', 'srcdoc' ] ) {
 	console.log( `\n# Marco aislado con el HTML entregado como ${ how }` );
 	const { browser, page, frame, log } = await open( { how } );
 	const m = await menu( frame );
-	R.check( `Arranca y queda completa (${ how })`, m.arranco && m.ciudades === 4 && m.camiones === 2 && ! m.falla && m.avisoFijo === 'none', await frame.url().slice( 0, 30 ) );
+	R.check( `Arranca y queda completa (${ how })`, m.arranco && m.ciudades === 4 && m.camiones === 3 && ! m.falla && m.avisoFijo === 'none', await frame.url().slice( 0, 30 ) );
 	await frame.click( '#pista' );
 	await waitState( page, frame, 'driving', 120000, 'conducción en la ciudad de pruebas' );
 	R.check( `La ciudad de pruebas carga (${ how })`, await game( frame, () => window.__rutaSur.truck.grounded ) );
