@@ -48,7 +48,9 @@ const store = {
 	write( key, value ) { try { localStorage.setItem( 'rutasur.' + key, JSON.stringify( value ) ); } catch ( e ) { /* sin almacenamiento */ } },
 };
 
-const config = Object.assign( { city: 'temuco', coords: '', truck: 'reparto', quality: 'media' }, store.read( 'config', {} ) );
+// con pantalla táctil (un teléfono) la calidad parte en baja: sin sombras y con menos tráfico y alcance
+const COARSE = typeof matchMedia === 'function' && matchMedia( '( pointer: coarse )' ).matches;
+const config = Object.assign( { city: 'temuco', coords: '', truck: 'reparto', quality: COARSE ? 'baja' : 'media' }, store.read( 'config', {} ) );
 
 
 function parseCoords( text ) {
@@ -122,7 +124,9 @@ const _sunDir = new THREE.Vector3( - 0.5, 1, 0.35 ).normalize();
 
 function setupShadows( quality ) {
 
-	const on = !! quality.shadow && !! renderer;
+	// en un teléfono, las sombras solo en calidad alta (elegida a propósito): cuestan un cuadro entero más
+	const on = !! quality.shadow && !! renderer && ( ! COARSE || quality === QUALITY.alta );
+	game.shadows = on;
 	if ( renderer ) renderer.shadowMap.enabled = on;
 	sun.castShadow = on;
 	if ( ! on ) return;
@@ -187,6 +191,7 @@ const game = {
 	ghost: false, debug: false,
 	mirrors: null, mirrorInsets: true,   // espejos retrovisores y sus recuadros en pantalla
 	traffic: null, trafficView: null, trafficOn: true, lastCarHit: - 9,   // los demás vehículos
+	shadows: false,                      // si el sol proyecta sombras en esta partida
 	signals: null,                       // semáforos y discos Pare (solo en el mapa abierto, donde se ven)
 	hour: 17,                            // hora del juego (0 a 24); el ciclo de luz sale de aquí
 	cam: { mode: 0, lookYaw: 0, lookPitch: 0, orbit: 0, lift: 0, yaw: 0, init: false },
@@ -275,6 +280,7 @@ function buildMenu() {
 	$( 'p-choques' ).addEventListener( 'click', () => { setPaused( false ); onAction( 'ghost' ); } );
 	$( 'p-espejos' ).addEventListener( 'click', () => { setPaused( false ); onAction( 'mirrors' ); } );
 	$( 'p-trafico' ).addEventListener( 'click', () => { setTraffic( ! game.trafficOn ); setPaused( false ); } );
+	$( 'p-datos' ).addEventListener( 'click', () => { setPaused( false ); onAction( 'debug' ); } );
 	buildRadioMenu();
 	$( 'p-otro' ).addEventListener( 'click', () => { setPaused( false ); onAction( 'skip' ); } );
 	$( 'salir' ).addEventListener( 'click', () => toMenu() );
@@ -1124,7 +1130,9 @@ function debugText() {
 	const geo = w.geo.toGeo( t.x, t.y, t.z );
 	const info = renderer.info;
 	return [
-		`Ruta Sur ${ VERSION } · ${ WORLD_NAMES[ w.kind ] || w.kind }`,
+		`Ruta Sur ${ VERSION } · ${ WORLD_NAMES[ w.kind ] || w.kind } · calidad ${ game.quality.label.toLowerCase() }${ game.shadows ? ' con sombras' : '' }`,
+		`gráficos: ${ guard.datos.graficos || '?' } · ${ window.innerWidth }×${ window.innerHeight } @${ ( window.devicePixelRatio || 1 ).toFixed( 1 ) }${ COARSE ? ' · táctil' : '' }`,
+		`calles ${ s.vias !== undefined ? s.vias : '-' } · edificios ${ s.edificios !== undefined ? s.edificios : '-' } · red vial ${ game.graph ? game.graph.count + ' nodos' : 'sin red' } · tráfico ${ game.traffic ? game.traffic.vehicles.length : 0 }`,
 		`${ p.fps.toFixed( 0 ) } c/s · física ${ p.physAvg.toFixed( 2 ) } ms · ${ p.rayAvg.toFixed( 0 ) } rayos por cuadro`,
 		`dibujos ${ info.render.calls } · triángulos ${ ( info.render.triangles / 1e6 ).toFixed( 2 ) } M`,
 		`teselas visibles ${ s.visibles } · activas ${ s.activas } · en camino ${ s.descargando } · fallidas ${ s.fallidas }${ s.rechazadas ? ` · sin memoria ${ s.rechazadas }` : '' }`,

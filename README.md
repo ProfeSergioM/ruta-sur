@@ -34,7 +34,7 @@ En un marco aislado tampoco hay almacenamiento: la caja de los encargos y las ca
 | Enter, N | Aceptar el encargo, pedir otro |
 | R | Volver a la calle más cercana |
 | G | Activar o desactivar los choques |
-| M, F3 | Sonido, datos técnicos |
+| M, F3 | Sonido, datos técnicos (en la pausa hay un botón para lo mismo) |
 | Esc o P | Pausa (desde ahí se apaga o enciende el tráfico) |
 
 Con pantalla táctil aparecen botones en pantalla, y la guía de despacho se toca para aceptar el encargo. También funciona un mando con disposición estándar.
@@ -170,6 +170,10 @@ Verificado solo contra simulaciones:
 El código de Ruta Sur se publica bajo la licencia MIT (ver `LICENSE`). Las obras incluidas conservan sus propias licencias, listadas arriba.
 
 ## Cambios
+
+**0.13.1**
+
+- En teléfonos la calidad parte en baja y las sombras solo se activan en calidad alta. La pausa tiene un botón de datos técnicos (equivale a F3) que muestra el adaptador gráfico, el tamaño de pantalla, la calidad, cuántas calles y edificios cargaron y si hay red vial, para diagnosticar fallas en un dispositivo.
 
 **0.13.0**
 
