@@ -1,6 +1,6 @@
 {
   "name": "ruta-sur",
-  "version": "0.14.2",
+  "version": "0.15.0",
   "description": "Simulador de camiones por las calles y los edificios de OpenStreetMap, en un solo archivo HTML",
   "scripts": {
     "build": "node tools/build.mjs",

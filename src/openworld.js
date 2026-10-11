@@ -183,7 +183,7 @@ export class OpenWorld {
 		this.roadsData = null; this.buildingsData = null;
 		this.roadsError = null; this.buildingsError = null;
 		this.built = 0; this.buildMs = 0; this.trees = 0; this.lamps = 0;
-		this.furniture = { postes: 0, estacionados: 0, paraderos: 0, senales: 0, semaforos: 0, bancas: 0, cebras: 0 };
+		this.furniture = { postes: 0, estacionados: 0, paraderos: 0, senales: 0, semaforos: 0, bancas: 0, cebras: 0, relleno: 0 };
 		this.signals = null; this.signalTime = 0; this._signalT = 0; // semáforos: el juego los asigna y pone la hora
 		this.pending = 0;          // trozos por construir dentro del radio de carga
 		this.pendingNear = 0;      // trozos por construir dentro del radio que la carga espera
@@ -310,7 +310,7 @@ export class OpenWorld {
 			}
 
 			this.trees += parts.trees; this.lamps += parts.lamps;
-			const F = this.furniture; F.postes += parts.poles; F.estacionados += parts.parked; F.paraderos += parts.stops; F.senales += parts.signs; F.semaforos += parts.lights; F.bancas += parts.benches; F.cebras += parts.crosswalks;
+			const F = this.furniture; F.postes += parts.poles; F.estacionados += parts.parked; F.paraderos += parts.stops; F.senales += parts.signs; F.semaforos += parts.lights; F.bancas += parts.benches; F.cebras += parts.crosswalks; F.relleno += parts.infill;
 			this.chunks.set( `${ c.i },${ c.j }`, { rays, meshes, objects: parts.objects, lamps: glowMesh && parts.signalLamps.length ? { attr: glowMesh.geometry.getAttribute( 'color' ), list: parts.signalLamps, shown: null } : null, i: c.i, j: c.j, cx: ( c.i + 0.5 ) * size, cz: ( c.j + 0.5 ) * size } );
 			this.built ++;
 			this.pending --;

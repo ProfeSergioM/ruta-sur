@@ -167,11 +167,29 @@ scene.add( sky );
 const marker = new THREE.Group();
 {
 
-	const beam = new THREE.Mesh( new THREE.CylinderGeometry( 1.4, 1.4, 90, 20, 1, true ), new THREE.MeshBasicMaterial( { color: 0xf2a33a, transparent: true, opacity: 0.38, side: THREE.DoubleSide, depthWrite: false, fog: false } ) );
-	beam.position.y = 45;
+	// un aro sobre la calzada, una columna corta que se desvanece hacia arriba y una chincheta que flota y gira
+	const grad = ( () => {
+
+		const c = document.createElement( 'canvas' ); c.width = 4; c.height = 64;
+		const g = c.getContext( '2d' ), lg = g.createLinearGradient( 0, 64, 0, 0 );
+		lg.addColorStop( 0, 'rgba(242,163,58,0.55)' ); lg.addColorStop( 0.5, 'rgba(242,163,58,0.2)' ); lg.addColorStop( 1, 'rgba(242,163,58,0)' );
+		g.fillStyle = lg; g.fillRect( 0, 0, 4, 64 );
+		const t = new THREE.CanvasTexture( c ); t.colorSpace = THREE.SRGBColorSpace;
+		return t;
+
+	} )();
+	const column = new THREE.Mesh( new THREE.CylinderGeometry( 1.2, 1.6, 14, 20, 1, true ), new THREE.MeshBasicMaterial( { map: grad, transparent: true, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending, fog: false } ) );
+	column.position.y = 7;
 	const ring = new THREE.Mesh( new THREE.TorusGeometry( 9, 0.35, 8, 40 ), new THREE.MeshBasicMaterial( { color: 0xf2a33a, fog: false } ) );
 	ring.rotation.x = Math.PI / 2; ring.position.y = 0.4;
-	marker.add( beam, ring );
+	const pinMat = new THREE.MeshLambertMaterial( { color: 0xf2a33a, emissive: 0xf2a33a, emissiveIntensity: 0.35 } );
+	const pin = new THREE.Group();
+	const head = new THREE.Mesh( new THREE.SphereGeometry( 1.4, 16, 12 ), pinMat ); head.position.y = 2.6;
+	const tip = new THREE.Mesh( new THREE.ConeGeometry( 0.9, 2.6, 16 ), pinMat ); tip.rotation.x = Math.PI; tip.position.y = 1.1;
+	pin.add( head, tip );
+	pin.position.y = 7.5;
+	marker.add( column, ring, pin );
+	marker.userData.pin = pin; marker.userData.ring = ring;
 	marker.visible = false;
 	scene.add( marker );
 
@@ -1065,6 +1083,10 @@ function drivingStep( dt ) {
 			}
 
 			marker.position.set( dest.x, marker.userData.y !== null && marker.userData.y !== undefined ? marker.userData.y : t.y, dest.z );
+			// la chincheta flota y gira; el aro late
+			const ph = game.simTime * 2;
+			marker.userData.pin.position.y = 7.5 + Math.sin( ph ) * 0.6; marker.userData.pin.rotation.y = ph * 0.6;
+			marker.userData.ring.scale.setScalar( 1 + 0.06 * Math.sin( ph * 1.5 ) );
 
 		}
 

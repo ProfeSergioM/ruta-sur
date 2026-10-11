@@ -47,7 +47,7 @@ R.check( 'Hay red vial y un encargo ofrecido', s.graph > 50 && s.jobs && s.jobs.
 const st = await page.evaluate( () => { const w = window.__rutaSur.world; return { ...w.stats(), kind: w.kind, provider: w.provider, credit: document.getElementById( 'a-logo' ).textContent }; } );
 R.check( 'La ciudad trae los edificios y las vías de OpenStreetMap', st.kind === 'open' && st.edificios > 100 && st.vias > 40, `${ st.edificios } edificios, ${ st.vias } vías, ${ st.visibles } trozos` );
 R.check( 'Y la ambientación: plazas, árboles mapeados y de vereda, faroles', st.manchas > 10 && st.arbolesOSM > 10 && st.arboles > 50 && st.faroles > 0, `${ st.manchas } manchas, ${ st.arbolesOSM } árboles mapeados, ${ st.arboles } árboles dibujados, ${ st.faroles } faroles` );
-R.check( 'Y el mobiliario urbano: postes, autos estacionados, paraderos, señales, semáforos y bancas', st.postes > 5 && st.estacionados > 10 && st.paraderos > 0 && st.senales > 2 && st.semaforos > 0 && st.bancas > 0 && st.cruces > 10 && st.cebras > 5, `${ st.cebras } pasos de cebra, ${ st.postes } postes, ${ st.estacionados } estacionados, ${ st.paraderos } paraderos, ${ st.senales } señales, ${ st.semaforos } semáforos, ${ st.bancas } bancas, ${ st.cruces } cruces` );
+R.check( 'Y el mobiliario urbano: postes, autos estacionados, paraderos, señales, semáforos y bancas', st.postes > 5 && st.estacionados > 10 && st.paraderos > 0 && st.senales > 2 && st.semaforos > 0 && st.bancas > 0 && st.cruces > 10 && st.cebras > 5 && st.relleno > 50, `${ st.relleno } edificios de relleno, ${ st.cebras } pasos de cebra, ${ st.postes } postes, ${ st.estacionados } estacionados, ${ st.paraderos } paraderos, ${ st.senales } señales, ${ st.semaforos } semáforos, ${ st.bancas } bancas, ${ st.cruces } cruces` );
 R.check( 'La atribución nombra a OpenStreetMap', /OpenStreetMap/.test( st.provider ) && /OpenStreetMap/.test( st.credit ), st.credit );
 await sleep( page, 2500 );
 await page.screenshot( { path: `${ SHOTS }/abierto-01-cabina.png` } );
@@ -104,6 +104,9 @@ await page.screenshot( { path: `${ SHOTS }/abierto-03-cenital.png` } );
 const crash = await page.evaluate( () => {
 
 	const g = window.__rutaSur, t = g.truck, city = g.world.city;
+	// los edificios de relleno también detienen al camión: cuentan como fachadas
+	const infill = []; for ( const c of g.world.chunks.values() ) for ( const o of c.objects || [] ) if ( o.kind === 'relleno' ) infill.push( { cx: o.x, cz: o.z, poly: o.poly, h: o.h, tags: { building: 'relleno' } } );
+	const everything = city.buildings.concat( infill );
 	const inside = ( x, z, poly ) => { let c = false; for ( let i = 0, j = poly.length - 1; i < poly.length; j = i ++ ) { const a = poly[ i ], b = poly[ j ]; if ( ( a.z > z ) !== ( b.z > z ) && x < ( b.x - a.x ) * ( z - a.z ) / ( b.z - a.z ) + a.x ) c = ! c; } return c; };
 	// un edificio cercano con un punto de partida libre 30 m al sur, sobre el suelo y fuera de todo edificio
 	const near = city.buildings.filter( b => Math.hypot( b.cx - t.x, b.cz - t.z ) < 250 && b.poly.length === 4 ).sort( ( a, b ) => Math.hypot( a.cx - t.x, a.cz - t.z ) - Math.hypot( b.cx - t.x, b.cz - t.z ) );
@@ -111,7 +114,7 @@ const crash = await page.evaluate( () => {
 
 		const half = Math.max( ...b.poly.map( p => Math.abs( p.z - b.cz ) ) );
 		const sx = b.cx, sz = b.cz - half - 28;
-		if ( city.buildings.some( o => inside( sx, sz, o.poly ) ) ) continue;
+		if ( everything.some( o => inside( sx, sz, o.poly ) ) ) continue;
 		const ground = g.world.groundAt( sx, sz );
 		if ( ! ground || Math.abs( ground.y ) > 0.1 ) continue;
 		if ( ! g.teleport( sx, sz, 0 ) ) continue; // mirando al norte, hacia el edificio
@@ -122,7 +125,7 @@ const crash = await page.evaluate( () => {
 		const d = t.spec.tractor.wheelbase + t.spec.tractor.frontOverhang;
 		const fx = t.x - Math.sin( t.yaw ) * d, fz = t.z - Math.cos( t.yaw ) * d;
 		let gap = Infinity, which = b;
-		for ( const o of city.buildings ) {
+		for ( const o of everything ) {
 
 			if ( Math.hypot( o.cx - fx, o.cz - fz ) > 60 ) continue;
 			const P = o.poly;

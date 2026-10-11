@@ -433,7 +433,7 @@ export function buildOpenChunk( city, i, j ) {
 	const solid = new MeshBuilder(), sign = new MeshBuilder();
 	const entry = ( city.index || chunkIndex( city, size ) ).get( key( i, j ) ) || { segments: [], buildings: [], greens: [], trees: [], crossings: [] };
 	const objects = [];                 // { kind, x, z } de cada pieza puesta, para las pruebas y el minimapa
-	const counts = { poles: 0, parked: 0, stops: 0, signs: 0, lights: 0, benches: 0, crosswalks: 0 };
+	const counts = { poles: 0, parked: 0, stops: 0, signs: 0, lights: 0, benches: 0, crosswalks: 0, infill: 0 };
 	const signalLamps = [];             // { key, group, lamp, v0, v1 }: lámparas de semáforo en la capa glow, por cruce y grupo
 	const within = ( x, z ) => x >= x0 && x < x1 && z >= z0 && z < z1;
 
@@ -470,6 +470,78 @@ export function buildOpenChunk( city, i, j ) {
 
 	// plazas, parques y agua
 	const greens = ( entry.greens || [] ).map( gi => city.greens[ gi ] );
+
+	// Edificios de relleno: donde OpenStreetMap no tiene edificios dibujados, cada calle recibe una
+	// hilera de lotes a ambos lados (casas y locales de uno a tres pisos), retirados de la vereda y
+	// separados entre sí, que no pisan edificios ni áreas mapeadas ni otra calle. Son invención del
+	// juego, para que la ciudad se vea viva; las estadísticas los cuentan aparte.
+	const infill = [];
+	{
+
+		const clearOfRoads = ( x, z ) => {
+
+			for ( let s = 0; s < segs.length; s += 2 ) {
+
+				const o = city.ways[ segs[ s ] ], k = segs[ s + 1 ];
+				if ( distToSegment( x, z, o.pts[ k ], o.pts[ k + 1 ] ) < o.width / 2 + SIDEWALK + 0.3 ) return false;
+
+			}
+
+			return true;
+
+		};
+		const clearOfMapped = ( x, z ) => {
+
+			for ( const b of buildings ) if ( inside( x, z, b.poly ) ) return false;
+			for ( const g of greens ) if ( inside( x, z, g.poly ) ) return false;
+			return true;
+
+		};
+		for ( let s = 0; s < segs.length; s += 2 ) {
+
+			const wi = segs[ s ], w = city.ways[ wi ], k = segs[ s + 1 ], p = w.pts[ k ], q = w.pts[ k + 1 ];
+			if ( ! w.along || w.width < 5 ) continue;
+			const a0 = w.along[ k ], a1 = w.along[ k + 1 ], len = a1 - a0;
+			if ( len < 8 ) continue;
+			const dx = ( q.x - p.x ) / len, dz = ( q.z - p.z ) / len, nx = - dz, nz = dx;
+			const front = w.width / 2 + SIDEWALK + 0.7, major = w.width >= MAJOR;
+			for ( const side of [ - 1, 1 ] ) {
+
+				// lotes de 9 a 13 m con 1,5 m entre ellos; la fase sale de la distancia acumulada
+				for ( let t = Math.ceil( a0 / 2 ) * 2; t < a1; ) {
+
+					const seed = w.id * 41 + Math.round( t ) * 3 + side * 7;
+					const lw = 9 + 4 * hashId( seed ), depth = 10 + 5 * hashId( seed + 1 ), gap = 1.5;
+					const t0 = t, t1 = t + lw;
+					t += lw + gap;
+					if ( t1 > a1 ) break;
+					if ( hashId( seed + 2 ) < 0.12 ) continue; // sitio eriazo
+					const corner = ( tt, dd ) => ( { x: p.x + dx * ( tt - a0 ) + nx * dd * side, z: p.z + dz * ( tt - a0 ) + nz * dd * side } );
+					const poly = [ corner( t0, front ), corner( t1, front ), corner( t1, front + depth ), corner( t0, front + depth ) ];
+					const cx = ( poly[ 0 ].x + poly[ 2 ].x ) / 2, cz = ( poly[ 0 ].z + poly[ 2 ].z ) / 2;
+					if ( ! within( cx, cz ) ) continue;
+					let ok = clearOfMapped( cx, cz );
+					for ( const c of poly ) if ( ok && ( ! clearOfMapped( c.x, c.z ) || ! clearOfRoads( c.x, c.z ) ) ) ok = false;
+					// un edificio mapeado dentro del lote
+					if ( ok ) for ( const b of buildings ) if ( inside( b.cx, b.cz, poly ) ) { ok = false; break; }
+					if ( ok ) for ( const o of infill ) if ( inside( o.cx, o.cz, poly ) ) { ok = false; break; } // la hilera de otra calle
+					if ( ! ok ) continue;
+					const floors = major ? 1 + Math.floor( hashId( seed + 3 ) * 3 ) : 1 + ( hashId( seed + 3 ) < 0.3 ? 1 : 0 );
+					const h = 0.4 + floors * 3.1 + hashId( seed + 4 ) * 0.4;
+					const b = { poly, cx, cz, h, color: PALETTE[ Math.floor( hashId( seed + 5 ) * PALETTE.length ) ] };
+					infill.push( b ); objects.push( { kind: 'relleno', x: cx, z: cz, poly, h } );
+					prism( bld, poly, - 0.5, h, b.color, 0.8, true );
+
+				}
+
+			}
+
+		}
+
+	}
+
+	counts.infill = infill.length;
+	const blocks = buildings.concat( infill ); // todo lo construido en el trozo, para no plantar nada encima
 	for ( const g of greens ) patch( park, g.poly, g.kind === 'water' ? 0.004 : 0.006, g.kind === 'water' ? COLORS.water : COLORS.green );
 
 	// árboles: los mapeados, los de los parques y bosques, y los de vereda a lo largo de las calles
@@ -492,7 +564,7 @@ export function buildOpenChunk( city, i, j ) {
 	const free = ( x, z ) => {
 
 		if ( ! within( x, z ) ) return false;
-		for ( const b of buildings ) if ( inside( x, z, b.poly ) ) return false;
+		for ( const b of blocks ) if ( inside( x, z, b.poly ) ) return false;
 		for ( const g of greens ) if ( g.kind === 'water' && inside( x, z, g.poly ) ) return false;
 		return true;
 

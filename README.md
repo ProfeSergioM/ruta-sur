@@ -88,6 +88,7 @@ Todo lo que viste el mapa abierto sale de datos abiertos o se genera en el momen
 - **Texturas.** La calzada, la vereda, el pasto y las fachadas llevan texturas de grano dibujadas en un lienzo al abrir el juego: asfalto con piedras claras, veredas de baldosas, pasto moteado y fachadas con una ventana por celda de 4 m por piso. Son texturas de luminancia que el color de cada vértice tiñe. Las de las calles se repiten cada 6 m a lo largo, con coordenadas acumuladas tramo a tramo para que no se corten en las esquinas; las de las paredes cuentan celdas enteras por pared, así ninguna ventana queda partida. La línea central va discontinua, con una textura de transparencia.
 - **Plazas, parques y agua.** La misma consulta que trae los edificios pide las áreas verdes (`leisure`, `landuse`, `natural`) y el agua (`natural=water`, riberas). Se dibujan como manchas sobre el suelo. Los bosques y parques reciben árboles repartidos por adentro, más densos en los bosques.
 - **Árboles y faroles.** Los árboles que OpenStreetMap tiene mapeados uno por uno (`natural=tree`) aparecen donde están. Además, las calles de 7 m o más reciben árboles de vereda cada 16 m, con huecos al azar, y las vías de 8 m o más (terciarias y mayores) faroles cada 34 m alternando de lado. Ninguno se planta sobre un edificio, sobre el agua ni en un cruce. El tronco y el poste chocan; la copa y el brazo del farol no.
+- **Edificios de relleno.** Donde OpenStreetMap no tiene edificios dibujados, cada calle recibe una hilera de lotes a ambos lados: casas y locales de uno a tres pisos (hasta tres en las vías principales), de 9 a 13 m de frente y 10 a 15 m de fondo, retirados de la vereda, con un sitio eriazo de vez en cuando. No pisan edificios ni áreas mapeadas ni otra calle. Son invención del juego para que la ciudad se vea viva: no corresponden a construcciones reales, y las estadísticas los cuentan aparte.
 - **Mobiliario urbano.** Las calles menores llevan postes de luz cada 28 m, alternando de lado. Las vías principales (terciarias y mayores) llevan autos estacionados junto a la solera con dos ruedas sobre la vereda, en el sentido de su lado y con huecos al azar; paraderos abiertos hacia la calle con su señal; y señales de velocidad máxima, una por sentido. En los cruces, dos vías principales reciben semáforos en las esquinas (poste con brazo sobre la calle y cabezal grande), y una calle menor que llega a una principal recibe un disco Pare. Los semáforos funcionan: cada cruce reparte sus vías en dos grupos según su orientación, que se turnan el verde (14 s de verde, 3 de ámbar y 1 con todo en rojo), con un desfase propio por cruce, y las lámparas se pintan según ese estado. El tráfico frena en rojo, pasa en ámbar solo si ya no alcanza a detenerse, y ante un Pare se detiene un segundo antes de seguir. Si el camión cruza la línea de detención con luz roja a más de 1 m/s, paga una multa de $ 30.000. Todo sale de `signals.js`, que reconoce los cruces desde la red vial, así que la ciudad de pruebas (sin semáforos dibujados) no los aplica. Las plazas tienen bancas y un basurero. Nada se planta encima de otra cosa, en un cruce, sobre un edificio ni sobre el agua. Las placas de las señales salen de un atlas dibujado al vuelo (Pare, 50, paradero y no estacionar).
 - **Cerros.** Una línea de lomas brumosas rodea la ciudad en el horizonte, a la distancia que la calidad elegida alcanza a dibujar. Es decorativa: no sale de ningún modelo de elevación, y por eso no coincide con los cerros reales.
 
@@ -97,13 +98,13 @@ El camión choca con lo que la malla tenga a un metro del suelo: en el mapa abie
 
 ### Tráfico
 
-Por las calles circulan autos, camionetas y micros. Cada uno recorre la red vial (la misma que usan los encargos) por su lado derecho, elige al azar la calle que sigue en cada cruce con preferencia por seguir derecho y por las vías principales, frena antes de un giro cerrado y guarda distancia con el de adelante: siete metros más un tiempo de reacción por su velocidad. El camión es un obstáculo más: si está delante, en su carril, el vehículo frena y espera. Aparecen entre 90 y 380 m del camión, sobre calles del componente principal de la red, y desaparecen más allá de 520 m; la calidad fija cuántos circulan a la vez (26, 42 o 60). Con `&trafico=0` en la dirección las calles quedan vacías, y en la pausa se apaga o enciende.
+Por las calles circulan autos, camionetas y micros. Cada uno recorre la red vial (la misma que usan los encargos) por su lado derecho, elige al azar la calle que sigue en cada cruce con preferencia por seguir derecho y por las vías principales, frena antes de un giro cerrado y guarda distancia con el de adelante: siete metros más un tiempo de reacción por su velocidad. El camión es un obstáculo más: si está delante, en su carril, el vehículo frena y espera. Aparecen entre 90 y 380 m del camión, sobre calles del componente principal de la red, y desaparecen más allá de 520 m; la calidad fija cuántos circulan a la vez (32, 56 u 80). Con `&trafico=0` en la dirección las calles quedan vacías, y en la pausa se apaga o enciende.
 
 Si el camión embiste a uno, el choque se detecta entre rectángulos en planta (tracto, semirremolque y vehículo) y la velocidad de cierre se mide sobre la normal de menor penetración. El camión pierde la velocidad que la cantidad de movimiento indica (un auto de 1,3 t contra 20 t frena poco), recibe un daño menor que contra un muro, y paga una multa que sale de la caja: $ 20.000 por un auto o una camioneta, $ 40.000 por una micro. El vehículo queda detenido cinco segundos, desplazado fuera del camión, y después sigue su camino. De noche encienden focos y pilotos, y el minimapa los muestra como puntos. El tráfico corre también en la ciudad de pruebas, sin conexión.
 
 ### Peatones
 
-Por las veredas camina gente: entre 12 y 32 personas cerca del camión según la calidad, a paso de 1 a 1,6 m/s, cada una por la vereda de un lado de la calle. En cada esquina eligen la calle que sigue, con preferencia por seguir derecho, y si la vereda siguiente queda al otro lado de una calle la cruzan en línea recta desde la esquina, que es donde están los pasos de cebra. Al pasar frente a la boca de una calle transversal también la cruzan, desde la solera de una esquina a la de la otra. En una esquina con semáforo esperan en la solera hasta que la calle que van a cruzar tenga luz roja para los autos. El tráfico frena ante un peatón que cruza por delante en su carril. Si el camión toca a uno acercándose, el atropello cuesta una multa de $ 100.000, el peatón vuelve a su vereda y sigue caminando. Los peatones se apagan junto con el tráfico.
+Por las veredas camina gente: entre 16 y 44 personas cerca del camión según la calidad, a paso de 1 a 1,6 m/s, cada una por la vereda de un lado de la calle. En cada esquina eligen la calle que sigue, con preferencia por seguir derecho, y si la vereda siguiente queda al otro lado de una calle la cruzan en línea recta desde la esquina, que es donde están los pasos de cebra. Al pasar frente a la boca de una calle transversal también la cruzan, desde la solera de una esquina a la de la otra. En una esquina con semáforo esperan en la solera hasta que la calle que van a cruzar tenga luz roja para los autos. El tráfico frena ante un peatón que cruza por delante en su carril. Si el camión toca a uno acercándose, el atropello cuesta una multa de $ 100.000, el peatón vuelve a su vereda y sigue caminando. Los peatones se apagan junto con el tráfico.
 
 ### Espejos
 
@@ -115,7 +116,7 @@ La red vial sale de la misma consulta a OpenStreetMap. Con ella el juego elige d
 
 ```
 npm install
-npm test          # pruebas numéricas, sin navegador (381 comprobaciones)
+npm test          # pruebas numéricas, sin navegador (382 comprobaciones)
 npm run e2e       # el juego completo en Chromium sin interfaz, 250 comprobaciones (necesita: npm i -D playwright)
 ```
 
@@ -147,6 +148,7 @@ Verificado solo contra simulaciones:
 
 - Las sondas de choque van a un metro del suelo. Un balcón o un letrero más alto no detiene al camión, y un auto estacionado sí. Los puntos de cada costado van cada 4,5 m, con un rayo de punta a punta entre ellos que atrapa los postes delgados.
 - Los espejos solo se dibujan en la vista de cabina.
+- Los edificios de relleno no son reales: rellenan lo que OpenStreetMap no tiene dibujado, con lotes genéricos.
 - En el mapa abierto el suelo es plano: no hay relieve ni soleras, y los cerros del horizonte son decorativos. Los edificios y las áreas dibujados en OpenStreetMap como relaciones (con patio interior o en varias partes) no aparecen, y los edificios que no declaran altura ni pisos reciben una altura típica de su tipo. Las calles se dibujan con un ancho fijo por clase, sin carriles ni cruces resueltos. Los semáforos llevan un ciclo fijo, sin giros protegidos ni coordinación entre cruces.
 - El juego supone tránsito por la derecha.
 - El tráfico es sencillo: respeta semáforos y Pare, y en los cruces sin ellos cede el paso a quien ya está en el cruce o llega antes por otra calle, pero no cambia de carril ni adelanta, y no esquiva al camión: si está cruzado en su carril, espera. Los peatones no esquivan nada: cruzan por la esquina aunque venga un vehículo (el vehículo frena).
@@ -174,6 +176,12 @@ Verificado solo contra simulaciones:
 El código de Ruta Sur se publica bajo la licencia MIT (ver `LICENSE`). Las obras incluidas conservan sus propias licencias, listadas arriba.
 
 ## Cambios
+
+**0.15.0**
+
+- Edificios de relleno a lo largo de las calles donde OpenStreetMap no tiene edificios: la ciudad se ve construida de punta a punta. Son invención del juego y se cuentan aparte.
+- Más tráfico y más gente: 32, 56 u 80 vehículos y 16, 30 o 44 peatones según la calidad.
+- Marcador de destino nuevo: una chincheta que flota y gira sobre un aro que late, con una columna corta de luz que se desvanece, en vez de la columna hasta el cielo.
 
 **0.14.2**
 
