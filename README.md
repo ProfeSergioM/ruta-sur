@@ -101,6 +101,10 @@ Por las calles circulan autos, camionetas y micros. Cada uno recorre la red vial
 
 Si el camión embiste a uno, el choque se detecta entre rectángulos en planta (tracto, semirremolque y vehículo) y la velocidad de cierre se mide sobre la normal de menor penetración. El camión pierde la velocidad que la cantidad de movimiento indica (un auto de 1,3 t contra 20 t frena poco), recibe un daño menor que contra un muro, y paga una multa que sale de la caja: $ 20.000 por un auto o una camioneta, $ 40.000 por una micro. El vehículo queda detenido cinco segundos, desplazado fuera del camión, y después sigue su camino. De noche encienden focos y pilotos, y el minimapa los muestra como puntos. El tráfico corre también en la ciudad de pruebas, sin conexión.
 
+### Peatones
+
+Por las veredas camina gente: entre 10 y 26 personas cerca del camión según la calidad, a paso de 1 a 1,6 m/s, cada una por la vereda de un lado de la calle. En cada esquina eligen la calle que sigue, con preferencia por seguir derecho, y si la vereda siguiente queda al otro lado de una calle la cruzan en línea recta desde la esquina, que es donde están los pasos de cebra. El tráfico frena ante un peatón que cruza por delante en su carril. Si el camión toca a uno acercándose, el atropello cuesta una multa de $ 100.000, el peatón vuelve a su vereda y sigue caminando. Los peatones se apagan junto con el tráfico.
+
 ### Espejos
 
 Cada espejo es una cámara que mira hacia atrás desde el vidrio, 7° hacia afuera, y dibuja en una textura. La textura va en el vidrio del espejo de la cabina (el derecho aparece al mirar a la derecha con E) y, para no tener que girar la cabeza, en dos recuadros en lo alto de la pantalla que la tecla V oculta. La imagen se invierte de izquierda a derecha, como en un espejo real. En calidad baja y media se refresca un espejo por cuadro; en alta, los dos.
@@ -111,8 +115,8 @@ La red vial sale de la misma consulta a OpenStreetMap. Con ella el juego elige d
 
 ```
 npm install
-npm test          # pruebas numéricas, sin navegador (362 comprobaciones)
-npm run e2e       # el juego completo en Chromium sin interfaz, 249 comprobaciones (necesita: npm i -D playwright)
+npm test          # pruebas numéricas, sin navegador (378 comprobaciones)
+npm run e2e       # el juego completo en Chromium sin interfaz, 250 comprobaciones (necesita: npm i -D playwright)
 ```
 
 Las pruebas numéricas cubren el modelo del camión (radios de giro contra la teoría, corredor de giro de la norma europea, aceleración, frenado, pendientes, caja de cambios, bajadas, choques frontales y laterales), la geodesia, la red vial, el mapa abierto (triangulación, prismas, trozos, memoria de edificios) y los encargos. `tests/osm-real.test.mjs` usa una muestra real del centro de Temuco (`tests/fixtures/temuco-centro.json`, © OpenStreetMap contributors, ODbL). El entorno de desarrollo no llega a Overpass, así que no hay una muestra real de edificios: `tests/open-fixture.mjs` reparte plantas sintéticas en las manzanas de esa muestra, con las etiquetas que usa el juego.
@@ -145,7 +149,7 @@ Verificado solo contra simulaciones:
 - Los espejos solo se dibujan en la vista de cabina.
 - En el mapa abierto el suelo es plano: no hay relieve ni soleras, y los cerros del horizonte son decorativos. Los edificios y las áreas dibujados en OpenStreetMap como relaciones (con patio interior o en varias partes) no aparecen, y los edificios que no declaran altura ni pisos reciben una altura típica de su tipo. Las calles se dibujan con un ancho fijo por clase, sin carriles ni cruces resueltos. Los semáforos llevan un ciclo fijo, sin giros protegidos ni coordinación entre cruces.
 - El juego supone tránsito por la derecha.
-- El tráfico es sencillo: respeta semáforos y Pare, pero en los cruces sin ellos no hay prioridad (dos vehículos pueden cruzarse), no cambian de carril ni adelantan, y no esquivan al camión: si está cruzado en su carril, esperan.
+- El tráfico es sencillo: respeta semáforos y Pare, y en los cruces sin ellos cede el paso a quien ya está en el cruce o llega antes por otra calle, pero no cambia de carril ni adelanta, y no esquiva al camión: si está cruzado en su carril, espera. Los peatones no esquivan nada: cruzan por la esquina aunque venga un vehículo (el vehículo frena).
 - La red vial ignora las restricciones de giro de OpenStreetMap (son relaciones, y la consulta trae solo vías).
 - Sin calles en un radio de 2,5 km, o si Overpass no responde, el juego queda en modo libre, sin encargos. Si la respuesta llega tarde, los encargos aparecen durante la partida.
 - Dentro de un marco aislado, los enlaces de la pantalla inicial pueden quedar sin efecto, porque el marco decide si deja abrir otras páginas.
@@ -170,6 +174,11 @@ Verificado solo contra simulaciones:
 El código de Ruta Sur se publica bajo la licencia MIT (ver `LICENSE`). Las obras incluidas conservan sus propias licencias, listadas arriba.
 
 ## Cambios
+
+**0.14.0**
+
+- Peatones por las veredas, que cruzan en las esquinas; el tráfico frena ante ellos y el camión paga $ 100.000 si atropella a uno.
+- En los cruces sin semáforo ni Pare, los vehículos ceden el paso a quien ya está en el cruce o llega antes por otra calle.
 
 **0.13.1**
 

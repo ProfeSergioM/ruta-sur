@@ -101,9 +101,10 @@ export class Traffic {
 	 * graph: grafo vial; rng: aleatorio en [0,1); count: cuántos vehículos mantener;
 	 * groundAt( x, z ) → altura del suelo o null
 	 */
-	constructor( { graph, rng = Math.random, count = 20, groundAt = null, signals = null } ) {
+	constructor( { graph, rng = Math.random, count = 20, groundAt = null, signals = null, pedestrians = null } ) {
 
-		this.graph = graph; this.rng = rng; this.count = count; this.groundAt = groundAt; this.signals = signals;
+		this.graph = graph; this.rng = rng; this.count = count; this.groundAt = groundAt; this.signals = signals; this.pedestrians = pedestrians;
+		this.yielding = 0;      // vehículos cediendo el paso en un cruce sin señal en el último paso
 		this.time = 0;          // reloj propio, para el ciclo de los semáforos
 		this.waiting = 0;       // vehículos detenidos ante una luz roja o un Pare en el último paso
 		this.vehicles = [];
@@ -299,7 +300,7 @@ export class Traffic {
 		if ( ! this.enabled || ! this.graph ) return out;
 		const g = this.graph, V = this.vehicles;
 		const bodies = truckBodies( truck, this._bodies );
-		this.braking = 0; this.waiting = 0;
+		this.braking = 0; this.waiting = 0; this.yielding = 0;
 		this.time += dt;
 
 		for ( const v of V ) {
@@ -344,6 +345,34 @@ export class Traffic {
 				} else if ( rule === 'green' ) v.stopWait = 0;
 
 			}
+			// cruce sin semáforo ni Pare: cede el paso a quien ya está en el cruce o llega antes por otra calle
+			if ( ! cr && g.degree[ g.to[ v.edge ] ] >= 3 && remaining < 30 ) {
+
+				const n = g.to[ v.edge ], wi = g.wayOf[ v.edge ];
+				let yieldTo = false;
+				for ( const o of V ) {
+
+					if ( o === v || o.stun > 0 ) continue;
+					if ( g.to[ o.edge ] === n && o.edge !== v.edge && g.wayOf[ o.edge ] !== wi ) {
+
+						const ro = g.len[ o.edge ] - o.s;
+						if ( ro < 14 && ( ro < remaining - 1 || ( Math.abs( ro - remaining ) <= 1 && o.id < v.id ) ) ) { yieldTo = true; break; }
+
+					} else if ( g.from[ o.edge ] === n && o.s < 7 && g.wayOf[ o.edge ] !== wi ) { yieldTo = true; break; } // ya está saliendo del cruce
+
+				}
+
+				if ( yieldTo ) {
+
+					const stopAt = Math.max( 0, remaining - 5.5 );
+					target = Math.min( target, Math.sqrt( 2 * K.brake * 0.8 * stopAt ) );
+					if ( stopAt < 0.6 ) target = 0;
+					this.yielding ++;
+
+				}
+
+			}
+
 			// el de adelante, en la misma arista o en la siguiente
 			const fx = fwdX( v.yaw ), fz = fwdZ( v.yaw );
 			let ahead = Infinity, aheadV = 0;
@@ -375,6 +404,18 @@ export class Traffic {
 				const extAlong = b.half * Math.abs( bfx * fx + bfz * fz ) + b.halfW * Math.abs( brx * fx + brz * fz );
 				const gap = along - v.half - extAlong;
 				if ( gap < ahead ) { ahead = gap; aheadV = b.vx * fx + b.vz * fz; forTruck = true; }
+
+			}
+
+			// un peatón cruzando por delante, dentro del carril: se frena como ante un vehículo detenido
+			if ( this.pedestrians ) for ( const p of this.pedestrians.list ) {
+
+				if ( ! p.crossing ) continue;
+				const dx = p.x - v.x, dz = p.z - v.z, along = dx * fx + dz * fz;
+				if ( along <= 0 || along > 30 ) continue;
+				if ( Math.abs( dx * rx + dz * rz ) > 4.5 ) continue; // en cualquier parte del ancho de la calle: va a pasar por el carril
+				const gap = along - v.half - 0.5;
+				if ( gap < ahead ) { ahead = gap; aheadV = 0; }
 
 			}
 

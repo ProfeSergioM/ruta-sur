@@ -13,6 +13,7 @@ import { Sound } from './audio.js';
 import { Mirrors } from './mirrors.js';
 import { Traffic, TrafficView } from './traffic.js';
 import { Signals, RED_LIGHT_FINE } from './signals.js';
+import { Pedestrians, PedestrianView, PED } from './pedestrians.js';
 import { Radio } from './radio.js';
 import { daylight, clockText, wrapHour, sunHeight, SUNRISE, SUNSET, DAY_SECONDS_PER_HOUR } from './daylight.js';
 import { compassFromYaw, compassName } from './geo.js';
@@ -193,6 +194,7 @@ const game = {
 	traffic: null, trafficView: null, trafficOn: true, lastCarHit: - 9,   // los demás vehículos
 	shadows: false,                      // si el sol proyecta sombras en esta partida
 	signals: null,                       // semáforos y discos Pare (solo en el mapa abierto, donde se ven)
+	peds: null, pedView: null, lastPedHit: - 9, // peatones
 	hour: 17,                            // hora del juego (0 a 24); el ciclo de luz sale de aquí
 	cam: { mode: 0, lookYaw: 0, lookPitch: 0, orbit: 0, lift: 0, yaw: 0, init: false },
 	load: null,
@@ -598,7 +600,11 @@ function startTraffic() {
 	// los semáforos solo donde se dibujan: en el mapa abierto
 	game.signals = world.kind === 'open' ? new Signals( game.graph ) : null;
 	world.signals = game.signals;
-	game.traffic = new Traffic( { graph: game.graph, rng: seededRandom(), count: game.trafficOn ? game.quality.traffic : 0, groundAt: ( x, z ) => { const g = world.groundAt( x, z ); return g ? g.y : null; }, signals: game.signals } );
+	const groundAt = ( x, z ) => { const g = world.groundAt( x, z ); return g ? g.y : null; };
+	game.peds = new Pedestrians( { graph: game.graph, rng: seededRandom(), count: game.trafficOn ? game.quality.peds : 0, groundAt } );
+	game.peds.enabled = game.trafficOn;
+	game.pedView = new PedestrianView( scene, game.peds );
+	game.traffic = new Traffic( { graph: game.graph, rng: seededRandom(), count: game.trafficOn ? game.quality.traffic : 0, groundAt, signals: game.signals, pedestrians: game.peds } );
 	game.traffic.enabled = game.trafficOn;
 	game.trafficView = new TrafficView( scene, game.traffic );
 	if ( _lastDaylight ) game.trafficView.setNight( _lastDaylight.lamps );
@@ -616,6 +622,14 @@ function setTraffic( on ) {
 
 	}
 
+	if ( game.peds ) {
+
+		game.peds.enabled = on;
+		game.peds.count = on ? game.quality.peds : 0;
+		if ( ! on ) game.peds.clearNear( 0, 0, Infinity );
+
+	}
+
 	hud.toast( on ? 'Tráfico activado' : 'Tráfico desactivado: las calles quedan vacías', '', 2 );
 
 }
@@ -625,7 +639,8 @@ function teardown() {
 	input.enabled = false;
 	if ( game.mirrors ) { game.mirrors.dispose(); game.mirrors = null; }
 	if ( game.trafficView ) { game.trafficView.dispose(); game.trafficView = null; }
-	game.traffic = null; game.signals = null;
+	if ( game.pedView ) { game.pedView.dispose(); game.pedView = null; }
+	game.traffic = null; game.signals = null; game.peds = null;
 	if ( game.model ) { scene.remove( game.model.root ); game.model.dispose(); game.model = null; }
 	if ( game.world ) { game.world.dispose(); game.world = null; }
 	game.truck = null; game.jobs = null; game.graph = null; game.load = null;
@@ -786,6 +801,7 @@ function resetToRoad() {
 	_focus.set( target.x, y, target.z ); world.update( _focus, 0, true );
 	const cargo = t.cargoMass, damage = t.damage, odo = t.odo;
 	if ( game.traffic ) game.traffic.clearNear( target.x, target.z, 45 );
+	if ( game.peds ) game.peds.clearNear( target.x, target.z, 6 );
 	const ok = placeTruck( t, target.x, target.z, target.yaw, world.terrain, y );
 	t.cargoMass = cargo; t.damage = damage; t.odo = odo;
 	game.cam.init = false;
@@ -894,6 +910,21 @@ function physicsStep( inp ) {
 
 	}
 
+	if ( game.peds ) {
+
+		const pv = game.peds.step( t, H, ! game.ghost );
+		if ( pv.hit > 0.3 && game.simTime - game.lastPedHit > 2 ) {
+
+			game.lastPedHit = game.simTime;
+			sound.thud( Math.max( 2, pv.hit ) );
+			if ( game.jobs ) game.jobs.fine( PED.fine );
+			hud.toast( `Atropellaste a un peatón a ${ Math.round( pv.hit * 3.6 ) } km/h: multa ${ fmtPesos( PED.fine ) }`, 'alerta', 4 );
+			game.pedHits = ( game.pedHits || 0 ) + 1;
+
+		}
+
+	}
+
 	if ( game.traffic ) {
 
 		const tv = game.traffic.step( t, H, ! game.ghost );
@@ -929,6 +960,7 @@ game.teleport = ( x, z, compass = 0 ) => {
 	const t = game.truck, cargo = t.cargoMass, damage = t.damage;
 	_focus.set( x, g.y, z ); game.world.update( _focus, 1, true );
 	if ( game.traffic ) game.traffic.clearNear( x, z, 45 );
+	if ( game.peds ) game.peds.clearNear( x, z, 6 );
 	const ok = placeTruck( t, x, z, Math.PI - compass * Math.PI / 180, game.world.terrain, g.y );
 	t.cargoMass = cargo; t.damage = damage;
 	game.cam.init = false;
@@ -951,6 +983,7 @@ game.advance = ( seconds, inp = {} ) => {
 	}
 
 	if ( game.trafficView ) game.trafficView.update();
+	if ( game.pedView ) game.pedView.update();
 	return true;
 
 };
@@ -973,6 +1006,7 @@ function drivingStep( dt ) {
 
 	game.model.update( t, dt, travel );
 	if ( game.trafficView ) game.trafficView.update();
+	if ( game.pedView ) game.pedView.update();
 	applyDaylight();
 	updateCamera( dt, inp.look );
 	_focus.set( t.x, t.y, t.z );

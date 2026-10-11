@@ -85,10 +85,12 @@ const traffic = await page.evaluate( () => {
 	const first = T.vehicles.map( v => ( { id: v.id, x: v.x, z: v.z } ) );
 	g.advance( 8, { decel: 1 } );
 	const moved = T.vehicles.filter( v => { const f = first.find( p => p.id === v.id ); return f && Math.hypot( v.x - f.x, v.z - f.z ) > 10; } ).length;
-	return { n: T.vehicles.length, first: first.length, moved, hits: T.hits, minDist: Math.min( ...T.vehicles.map( v => Math.hypot( v.x - t.x, v.z - t.z ) ) ) };
+	const P = g.peds; P.enabled = true; P.count = 12; g.advance( 45, {} ); // en 45 s a paso de persona alguno llega a una esquina y dobla
+	return { n: T.vehicles.length, first: first.length, moved, hits: T.hits, minDist: Math.min( ...T.vehicles.map( v => Math.hypot( v.x - t.x, v.z - t.z ) ) ), peds: P.list.length, pedMeshes: g.pedView.group.children.length, pedCrossings: P.crossings, pedHits: P.hits };
 
 } );
 R.check( 'Al activar el tráfico, los vehículos circulan por las calles reales', traffic.n >= 8 && traffic.moved >= 4 && traffic.hits === 0, `${ traffic.n } vehículos, ${ traffic.moved } de ${ traffic.first } se movieron, el más cercano a ${ traffic.minDist.toFixed( 0 ) } m, ${ traffic.hits } choques` );
+R.check( 'Y los peatones caminan por las veredas y cruzan en las esquinas', traffic.peds >= 8 && traffic.pedMeshes === traffic.peds && traffic.pedCrossings > 0 && traffic.pedHits === 0, `${ traffic.peds } peatones, ${ traffic.pedCrossings } cruces en 45 s` );
 R.check( 'Siempre con suelo bajo las ruedas, plano', drive.noGround === 0 && drive.maxY < 0.1 && drive.minSamples >= 20, `altura máxima ${ drive.maxY.toFixed( 2 ) } m, mínimo ${ drive.minSamples } muestras` );
 R.info( 'Trozos', `${ drive.chunks } en memoria, ${ drive.built } construidos en ${ drive.ms.toFixed( 0 ) } ms` );
 await page.keyboard.press( 'KeyC' );

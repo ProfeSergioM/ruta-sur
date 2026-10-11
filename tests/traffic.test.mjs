@@ -139,5 +139,32 @@ report( 'En una calle de dos sentidos se circula corrido a la derecha; en una de
 	report( 'Los tipos tienen medidas y masas plausibles', KINDS.auto.length < KINDS.camioneta.length && KINDS.camioneta.length < KINDS.micro.length && KINDS.micro.mass > 5000 );
 }
 
+// --- cruce sin semáforo ni Pare: cede el paso quien llega después
+{
+	const t = createTruck( VEHICLES.rigido, { x: CITY_START.x + 300, z: CITY_START.z + 300, yaw: 0 } );
+	const T = new Traffic( { graph: g, rng: rngOf( 8 ), count: 0 } );
+	// un nodo de grado 3 o más donde llegan dos aristas de calles distintas, ambas largas
+	let pick = null;
+	for ( let n = 0; n < g.count && ! pick; n ++ ) {
+
+		if ( g.degree[ n ] < 3 ) continue;
+		const ins = []; for ( let e = 0; e < g.from.length; e ++ ) if ( g.to[ e ] === n && g.len[ e ] > 20 ) ins.push( e );
+		for ( let i = 0; i < ins.length && ! pick; i ++ ) for ( let j = i + 1; j < ins.length; j ++ ) if ( g.wayOf[ ins[ i ] ] !== g.wayOf[ ins[ j ] ] && g.ways[ g.wayOf[ ins[ i ] ] ].highway === 'residential' && g.ways[ g.wayOf[ ins[ j ] ] ].highway === 'residential' ) { pick = { n, a: ins[ i ], b: ins[ j ] }; break; }
+
+	}
+
+	report( 'Hay un cruce de dos calles residenciales (sin semáforo ni Pare)', !! pick );
+	t.x = g.x[ pick.n ] + 70; t.z = g.z[ pick.n ] + 70; // el camión cerca, para que los autos no se descarten por lejanía
+	const K = KINDS.auto, mk = ( id, e, s, v ) => { const o = { id, kind: 'auto', K, color: [ 1, 1, 1 ], x: 0, z: 0, y: 0, yaw: 0, v, stun: 0, hit: 0, hitCool: 0, since: 0, stopWait: 0, passedNode: - 1, groundT: 0, mesh: null, half: K.length / 2, halfW: K.width / 2, brakingFor: 0 }; T._place( o, e, s ); return o; };
+	// el primero llega 4 m antes que el segundo, los dos a 36 km/h; el segundo debe ceder
+	const first = mk( 1, pick.a, g.len[ pick.a ] - 16, 10 ), second = mk( 2, pick.b, g.len[ pick.b ] - 20, 10 );
+	// que ninguno gire hacia la calle del otro: salen derecho si pueden
+	T.vehicles = [ first, second ];
+	let minGap = Infinity, yielded = 0, secondMinV = Infinity;
+	for ( let i = 0; i < 8 * 60; i ++ ) { T.step( t, H ); minGap = Math.min( minGap, boxGap( first, second ) ); yielded = Math.max( yielded, T.yielding ); if ( second.edge === pick.b ) secondMinV = Math.min( secondMinV, second.v ); }
+	report( 'En el cruce ceden el paso: el que llega después frena y nunca se montan', minGap > 0.3 && yielded > 0 && secondMinV < 3, `brecha mínima ${ minGap.toFixed( 1 ) } m, ${ yielded } cediendo, el segundo bajó a ${ ( secondMinV * 3.6 ).toFixed( 0 ) } km/h` );
+	report( 'Después los dos siguen su camino', first.edge !== pick.a && second.edge !== pick.b );
+}
+
 console.log( fail ? `\n${ fail } pruebas fallaron.` : '\nTráfico: todo dentro de lo esperado' );
 process.exit( fail ? 1 : 0 );
