@@ -27,10 +27,12 @@ const fwdX = yaw => - Math.sin( yaw ), fwdZ = yaw => - Math.cos( yaw );
 
 export class Pedestrians {
 
-	/** graph: red vial; rng: aleatorio; count: cuántos mantener; groundAt( x, z ) → altura o null */
-	constructor( { graph, rng = Math.random, count = 16, groundAt = null } ) {
+	/** graph: red vial; rng: aleatorio; count: cuántos mantener; groundAt( x, z ) → altura o null; signals: semáforos (opcional) */
+	constructor( { graph, rng = Math.random, count = 16, groundAt = null, signals = null } ) {
 
-		this.graph = graph; this.rng = rng; this.count = count; this.groundAt = groundAt;
+		this.graph = graph; this.rng = rng; this.count = count; this.groundAt = groundAt; this.signals = signals;
+		this.time = 0;          // reloj propio, el mismo ciclo que el tráfico
+		this.waiting = 0;       // peatones esperando la luz en una esquina en el último paso
 		this.list = [];
 		this.enabled = true;
 		this.hits = 0; this.spawned = 0; this.crossings = 0;
@@ -106,8 +108,24 @@ export class Pedestrians {
 		const from = { x: p.x, z: p.z }, to = this.sidewalkAt( best, 0, p.side, {} );
 		const d = Math.hypot( to.x - from.x, to.z - from.z );
 		p.edge = best; p.s = 0;
-		if ( d > 2.5 ) { p.crossing = { x0: from.x, z0: from.z, x1: to.x, z1: to.z, t: 0, len: d }; this.crossings ++; p.yaw = Math.atan2( - ( to.x - from.x ), - ( to.z - from.z ) ); }
-		else this._place( p, best, 0 );
+		if ( d > 2.5 ) {
+
+			p.crossing = { x0: from.x, z0: from.z, x1: to.x, z1: to.z, t: 0, len: d, cr: null, wayId: null };
+			// en un cruce con semáforo se cruza la calle cuyos autos tienen luz roja: la calle cruzada es
+			// la que sale del nodo más perpendicular al recorrido del cruce
+			const cr = this.signals ? this.signals.atNode( n ) : null;
+			if ( cr && cr.kind === 'light' ) {
+
+				const cx = ( to.x - from.x ) / d, cz = ( to.z - from.z ) / d;
+				let bestDot = 2, wayId = null;
+				for ( const e2 of outs ) { const dot = Math.abs( g.ux[ e2 ] * cx + g.uz[ e2 ] * cz ); if ( dot < bestDot ) { bestDot = dot; wayId = g.ways[ g.wayOf[ e2 ] ].id; } }
+				if ( wayId !== null ) { p.crossing.cr = cr; p.crossing.wayId = wayId; }
+
+			}
+
+			this.crossings ++; p.yaw = Math.atan2( - ( to.x - from.x ), - ( to.z - from.z ) );
+
+		} else this._place( p, best, 0 );
 
 	}
 
@@ -130,6 +148,7 @@ export class Pedestrians {
 		out.hit = 0; out.who = null;
 		if ( ! this.enabled || ! this.graph ) return out;
 		const g = this.graph, bodies = truckBodies( truck, this._bodies );
+		this.time += dt; this.waiting = 0;
 		for ( const p of this.list ) {
 
 			const dTruck = Math.hypot( p.x - truck.x, p.z - truck.z );
@@ -139,6 +158,8 @@ export class Pedestrians {
 			if ( p.crossing ) {
 
 				const c = p.crossing;
+				// antes de bajar de la solera, espera a que la calle cruzada tenga luz roja para los autos
+				if ( c.t === 0 && c.cr && this.signals.state( c.cr, c.wayId, this.time ) !== 'red' ) { this.waiting ++; continue; }
 				c.t += p.speed * dt;
 				if ( c.t >= c.len ) { p.crossing = null; this._place( p, p.edge, 0 ); }
 				else { const f = c.t / c.len; p.x = c.x0 + ( c.x1 - c.x0 ) * f; p.z = c.z0 + ( c.z1 - c.z0 ) * f; }

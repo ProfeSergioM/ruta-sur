@@ -4,6 +4,7 @@ import { buildGraph, nearestSegment } from '../src/osm.js';
 import { cityRoadsOSM, CITY_START } from '../src/testcity.js';
 import { createTruck, VEHICLES } from '../src/physics.js';
 import { Pedestrians, PED } from '../src/pedestrians.js';
+import { Signals, PERIOD } from '../src/signals.js';
 import { Traffic, KINDS, boxGap } from '../src/traffic.js';
 import { ROAD_WIDTH } from '../src/openmap.js';
 
@@ -91,6 +92,44 @@ const truckAt = () => createTruck( VEHICLES.reparto, { x: CITY_START.x, z: CITY_
 	for ( let i = 0; i < 3 * 60; i ++ ) { t.x += fx * t.v * H; t.z += fz * t.v * H; ghost += P2.step( t, H, false ).hit; }
 	report( 'Con los choques desactivados no hay atropello', ghost === 0 && P2.hits === 0 );
 	report( 'La multa por atropello es la mayor de todas', PED.fine > 40000 );
+}
+
+// --- en un cruce con semáforo esperan la luz roja de la calle que cruzan
+{
+	const S = new Signals( g ), light = S.crossings.find( c => c.kind === 'light' );
+	const t = createTruck( VEHICLES.reparto, { x: light.x + 120, z: light.z + 120, yaw: 0 } );
+	const P = new Pedestrians( { graph: g, rng: rngOf( 3 ), count: 0, signals: S } );
+	// el peatón está en la esquina y va a cruzar la primera vía principal del cruce
+	const wayId = light.majorIds[ 0 ];
+	const p = { id: 1, side: 1, speed: 1.3, x: light.x + 6, z: light.z + 6, y: 0, yaw: 0, edge: 0, s: 0, crossing: { x0: light.x + 6, z0: light.z + 6, x1: light.x - 6, z1: light.z + 6, t: 0, len: 12, cr: light, wayId }, hit: 0, hitCool: 0, phase: 0, mesh: null, half: PED.half, halfW: PED.half, groundT: 0, tall: 1.7 };
+	P.list.push( p );
+	const timeWhen = ( state, hold ) => { for ( let τ = 0; τ < PERIOD; τ += 0.1 ) if ( S.state( light, wayId, τ ) === state && S.state( light, wayId, τ + hold ) === state ) return τ; return null; };
+	P.time = timeWhen( 'green', 6 );
+	for ( let i = 0; i < 5 * 60; i ++ ) P.step( t, H );
+	report( 'Con luz verde para los autos, el peatón espera en la solera', p.crossing && p.crossing.t === 0 && P.waiting === 1, `avanzó ${ p.crossing && p.crossing.t.toFixed( 1 ) } m` );
+	P.time = timeWhen( 'red', 8 );
+	for ( let i = 0; i < 3 * 60; i ++ ) P.step( t, H );
+	report( 'Con luz roja para los autos, cruza', p.crossing && p.crossing.t > 3, `avanzó ${ p.crossing && p.crossing.t.toFixed( 1 ) } m` );
+	// al doblar en la esquina del semáforo, el cruce queda ligado a la calle que atraviesa
+	const P2 = new Pedestrians( { graph: g, rng: rngOf( 11 ), count: 0, signals: S } );
+	let node = - 1; for ( const [ n, c ] of S.byNode ) if ( c === light ) { node = n; break; }
+	let linked = 0, tries = 0;
+	for ( let e = 0; e < g.from.length && tries < 12; e ++ ) {
+
+		if ( g.to[ e ] !== node ) continue;
+		for ( const side of [ - 1, 1 ] ) {
+
+			tries ++;
+			const q = { id: 50 + tries, side, speed: 1.2, x: 0, z: 0, y: 0, yaw: 0, edge: e, s: 0, crossing: null, hit: 0, hitCool: 0, phase: 0, mesh: null, half: PED.half, halfW: PED.half, groundT: 0, tall: 1.7 };
+			P2._place( q, e, g.len[ e ] - 0.01 ); P2.list = [ q ];
+			for ( let k = 0; k < 40; k ++ ) { P2.time = 0; P2.step( t, H ); if ( q.crossing ) break; }
+			if ( q.crossing && q.crossing.cr === light && light.majorIds.includes( q.crossing.wayId ) ) linked ++;
+
+		}
+
+	}
+
+	report( 'Quien dobla en la esquina del semáforo y cruza queda ligado a una de sus vías', linked > 0, `${ linked } de ${ tries } intentos cruzaron con semáforo` );
 }
 
 console.log( fail ? `\n${ fail } pruebas fallaron.` : '\nPeatones: todo dentro de lo esperado' );

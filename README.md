@@ -97,13 +97,13 @@ El camión choca con lo que la malla tenga a un metro del suelo: en el mapa abie
 
 ### Tráfico
 
-Por las calles circulan autos, camionetas y micros. Cada uno recorre la red vial (la misma que usan los encargos) por su lado derecho, elige al azar la calle que sigue en cada cruce con preferencia por seguir derecho y por las vías principales, frena antes de un giro cerrado y guarda distancia con el de adelante: siete metros más un tiempo de reacción por su velocidad. El camión es un obstáculo más: si está delante, en su carril, el vehículo frena y espera. Aparecen entre 90 y 380 m del camión, sobre calles del componente principal de la red, y desaparecen más allá de 520 m; la calidad fija cuántos circulan a la vez (18, 30 o 44). Con `&trafico=0` en la dirección las calles quedan vacías, y en la pausa se apaga o enciende.
+Por las calles circulan autos, camionetas y micros. Cada uno recorre la red vial (la misma que usan los encargos) por su lado derecho, elige al azar la calle que sigue en cada cruce con preferencia por seguir derecho y por las vías principales, frena antes de un giro cerrado y guarda distancia con el de adelante: siete metros más un tiempo de reacción por su velocidad. El camión es un obstáculo más: si está delante, en su carril, el vehículo frena y espera. Aparecen entre 90 y 380 m del camión, sobre calles del componente principal de la red, y desaparecen más allá de 520 m; la calidad fija cuántos circulan a la vez (26, 42 o 60). Con `&trafico=0` en la dirección las calles quedan vacías, y en la pausa se apaga o enciende.
 
 Si el camión embiste a uno, el choque se detecta entre rectángulos en planta (tracto, semirremolque y vehículo) y la velocidad de cierre se mide sobre la normal de menor penetración. El camión pierde la velocidad que la cantidad de movimiento indica (un auto de 1,3 t contra 20 t frena poco), recibe un daño menor que contra un muro, y paga una multa que sale de la caja: $ 20.000 por un auto o una camioneta, $ 40.000 por una micro. El vehículo queda detenido cinco segundos, desplazado fuera del camión, y después sigue su camino. De noche encienden focos y pilotos, y el minimapa los muestra como puntos. El tráfico corre también en la ciudad de pruebas, sin conexión.
 
 ### Peatones
 
-Por las veredas camina gente: entre 10 y 26 personas cerca del camión según la calidad, a paso de 1 a 1,6 m/s, cada una por la vereda de un lado de la calle. En cada esquina eligen la calle que sigue, con preferencia por seguir derecho, y si la vereda siguiente queda al otro lado de una calle la cruzan en línea recta desde la esquina, que es donde están los pasos de cebra. El tráfico frena ante un peatón que cruza por delante en su carril. Si el camión toca a uno acercándose, el atropello cuesta una multa de $ 100.000, el peatón vuelve a su vereda y sigue caminando. Los peatones se apagan junto con el tráfico.
+Por las veredas camina gente: entre 12 y 32 personas cerca del camión según la calidad, a paso de 1 a 1,6 m/s, cada una por la vereda de un lado de la calle. En cada esquina eligen la calle que sigue, con preferencia por seguir derecho, y si la vereda siguiente queda al otro lado de una calle la cruzan en línea recta desde la esquina, que es donde están los pasos de cebra. En una esquina con semáforo esperan en la solera hasta que la calle que van a cruzar tenga luz roja para los autos. El tráfico frena ante un peatón que cruza por delante en su carril. Si el camión toca a uno acercándose, el atropello cuesta una multa de $ 100.000, el peatón vuelve a su vereda y sigue caminando. Los peatones se apagan junto con el tráfico.
 
 ### Espejos
 
@@ -115,7 +115,7 @@ La red vial sale de la misma consulta a OpenStreetMap. Con ella el juego elige d
 
 ```
 npm install
-npm test          # pruebas numéricas, sin navegador (378 comprobaciones)
+npm test          # pruebas numéricas, sin navegador (381 comprobaciones)
 npm run e2e       # el juego completo en Chromium sin interfaz, 250 comprobaciones (necesita: npm i -D playwright)
 ```
 
@@ -174,6 +174,11 @@ Verificado solo contra simulaciones:
 El código de Ruta Sur se publica bajo la licencia MIT (ver `LICENSE`). Las obras incluidas conservan sus propias licencias, listadas arriba.
 
 ## Cambios
+
+**0.14.1**
+
+- Los peatones respetan el semáforo: en una esquina con semáforo esperan hasta que la calle que cruzan esté en rojo para los autos.
+- Más tráfico y más gente: 26, 42 o 60 vehículos y 12, 22 o 32 peatones según la calidad.
 
 **0.14.0**
 

@@ -601,7 +601,7 @@ function startTraffic() {
 	game.signals = world.kind === 'open' ? new Signals( game.graph ) : null;
 	world.signals = game.signals;
 	const groundAt = ( x, z ) => { const g = world.groundAt( x, z ); return g ? g.y : null; };
-	game.peds = new Pedestrians( { graph: game.graph, rng: seededRandom(), count: game.trafficOn ? game.quality.peds : 0, groundAt } );
+	game.peds = new Pedestrians( { graph: game.graph, rng: seededRandom(), count: game.trafficOn ? game.quality.peds : 0, groundAt, signals: game.signals } );
 	game.peds.enabled = game.trafficOn;
 	game.pedView = new PedestrianView( scene, game.peds );
 	game.traffic = new Traffic( { graph: game.graph, rng: seededRandom(), count: game.trafficOn ? game.quality.traffic : 0, groundAt, signals: game.signals, pedestrians: game.peds } );
