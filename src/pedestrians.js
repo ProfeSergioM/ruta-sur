@@ -54,9 +54,22 @@ export class Pedestrians {
 
 	}
 
+	// Cuánto de la boca de las otras calles del nodo final de `e` (o inicial, con `start`) invade la vereda:
+	// medio ancho de la más ancha más medio metro; 0 si en ese nodo no hay otra calle
+	_mouth( e, start = false ) {
+
+		const g = this.graph, n = start ? g.from[ e ] : g.to[ e ], wi = g.wayOf[ e ];
+		let m = 0;
+		for ( const e2 of g.adj[ n ] ) if ( g.wayOf[ e2 ] !== wi ) m = Math.max( m, ( ROAD_WIDTH[ g.ways[ g.wayOf[ e2 ] ].highway ] || 5 ) / 2 + 0.5 );
+		for ( let e2 = 0; e2 < g.from.length; e2 ++ ) if ( g.to[ e2 ] === n && g.wayOf[ e2 ] !== wi ) { m = Math.max( m, ( ROAD_WIDTH[ g.ways[ g.wayOf[ e2 ] ].highway ] || 5 ) / 2 + 0.5 ); break; }
+		return m;
+
+	}
+
 	_place( p, e, s ) {
 
 		p.edge = e; p.s = s;
+		p.turnAt = this.graph.len[ e ] - this._mouth( e ); // donde empieza la boca de la calle transversal
 		this.sidewalkAt( e, s, p.side, p );
 		p.yaw = Math.atan2( - this.graph.ux[ e ], - this.graph.uz[ e ] );
 
@@ -105,9 +118,11 @@ export class Pedestrians {
 		}
 
 		if ( best < 0 ) { best = g.rev[ e ]; if ( best < 0 ) { p.drop = true; return; } p.side = - p.side; } // calle sin salida: se devuelve por la otra vereda
-		const from = { x: p.x, z: p.z }, to = this.sidewalkAt( best, 0, p.side, {} );
+		// la vereda siguiente empieza pasada la boca de la calle que se cruza (la de ahora, si dobla; la transversal, si sigue)
+		const s0 = Math.min( this._mouth( best, true ), Math.max( 0, g.len[ best ] - 1 ) );
+		const from = { x: p.x, z: p.z }, to = this.sidewalkAt( best, s0, p.side, {} );
 		const d = Math.hypot( to.x - from.x, to.z - from.z );
-		p.edge = best; p.s = 0;
+		p.edge = best; p.s = s0; p.turnAt = g.len[ best ] - this._mouth( best );
 		if ( d > 2.5 ) {
 
 			p.crossing = { x0: from.x, z0: from.z, x1: to.x, z1: to.z, t: 0, len: d, cr: null, wayId: null };
@@ -125,7 +140,7 @@ export class Pedestrians {
 
 			this.crossings ++; p.yaw = Math.atan2( - ( to.x - from.x ), - ( to.z - from.z ) );
 
-		} else this._place( p, best, 0 );
+		} else this._place( p, best, s0 );
 
 	}
 
@@ -161,13 +176,13 @@ export class Pedestrians {
 				// antes de bajar de la solera, espera a que la calle cruzada tenga luz roja para los autos
 				if ( c.t === 0 && c.cr && this.signals.state( c.cr, c.wayId, this.time ) !== 'red' ) { this.waiting ++; continue; }
 				c.t += p.speed * dt;
-				if ( c.t >= c.len ) { p.crossing = null; this._place( p, p.edge, 0 ); }
+				if ( c.t >= c.len ) { p.crossing = null; this._place( p, p.edge, p.s ); }
 				else { const f = c.t / c.len; p.x = c.x0 + ( c.x1 - c.x0 ) * f; p.z = c.z0 + ( c.z1 - c.z0 ) * f; }
 
 			} else {
 
 				p.s += p.speed * dt;
-				if ( p.s >= g.len[ p.edge ] ) this._turn( p );
+				if ( p.s >= ( p.turnAt !== undefined ? p.turnAt : g.len[ p.edge ] ) ) this._turn( p );
 				else this.sidewalkAt( p.edge, p.s, p.side, p );
 
 			}

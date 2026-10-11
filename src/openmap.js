@@ -700,7 +700,8 @@ export function buildOpenChunk( city, i, j ) {
 				const x = c.x + a.ux * ( other / 2 + SIDEWALK + 0.4 ) + a.uz * ( a.width / 2 + 0.5 );
 				const z = c.z + a.uz * ( other / 2 + SIDEWALK + 0.4 ) - a.ux * ( a.width / 2 + 0.5 );
 				// nunca sobre una calzada: en una avenida de dos calzadas, la esquina de una cae dentro de la otra
-				if ( ! within( x, z ) || ! free( x, z ) || onRoad( x, z ) ) continue;
+				// un edificio real pegado a la vereda no quita el semáforo: el cabezal cuelga sobre la calle igual
+				if ( ! within( x, z ) || onRoad( x, z ) ) continue;
 				const group = signalGroup( a.ux, a.uz );
 				const arm = Math.min( 5, a.width / 2 + 0.5 - 1.4 ); // el cabezal cuelga sobre el carril de quien llega
 				for ( const l of trafficLight( solid, decor, glow, x, z, Math.atan2( a.ux, a.uz ), group === 0 ? 'green' : 'red', arm ) ) signalLamps.push( { key: ckey, group, ...l } );

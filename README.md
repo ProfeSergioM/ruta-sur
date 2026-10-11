@@ -103,7 +103,7 @@ Si el camión embiste a uno, el choque se detecta entre rectángulos en planta (
 
 ### Peatones
 
-Por las veredas camina gente: entre 12 y 32 personas cerca del camión según la calidad, a paso de 1 a 1,6 m/s, cada una por la vereda de un lado de la calle. En cada esquina eligen la calle que sigue, con preferencia por seguir derecho, y si la vereda siguiente queda al otro lado de una calle la cruzan en línea recta desde la esquina, que es donde están los pasos de cebra. En una esquina con semáforo esperan en la solera hasta que la calle que van a cruzar tenga luz roja para los autos. El tráfico frena ante un peatón que cruza por delante en su carril. Si el camión toca a uno acercándose, el atropello cuesta una multa de $ 100.000, el peatón vuelve a su vereda y sigue caminando. Los peatones se apagan junto con el tráfico.
+Por las veredas camina gente: entre 12 y 32 personas cerca del camión según la calidad, a paso de 1 a 1,6 m/s, cada una por la vereda de un lado de la calle. En cada esquina eligen la calle que sigue, con preferencia por seguir derecho, y si la vereda siguiente queda al otro lado de una calle la cruzan en línea recta desde la esquina, que es donde están los pasos de cebra. Al pasar frente a la boca de una calle transversal también la cruzan, desde la solera de una esquina a la de la otra. En una esquina con semáforo esperan en la solera hasta que la calle que van a cruzar tenga luz roja para los autos. El tráfico frena ante un peatón que cruza por delante en su carril. Si el camión toca a uno acercándose, el atropello cuesta una multa de $ 100.000, el peatón vuelve a su vereda y sigue caminando. Los peatones se apagan junto con el tráfico.
 
 ### Espejos
 
@@ -174,6 +174,11 @@ Verificado solo contra simulaciones:
 El código de Ruta Sur se publica bajo la licencia MIT (ver `LICENSE`). Las obras incluidas conservan sus propias licencias, listadas arriba.
 
 ## Cambios
+
+**0.14.2**
+
+- Un peatón que sigue derecho por su vereda y pasa frente a la boca de una calle transversal ahora la cruza como tal: espera la luz roja de esa calle si hay semáforo y los autos le frenan. Antes la atravesaba como si fuera vereda, y por eso parecía cruzar en rojo.
+- Un edificio real pegado a la vereda ya no quita el semáforo de la esquina: el cabezal cuelga sobre la calle igual. En las avenidas de dos calzadas faltaba el de la primera.
 
 **0.14.1**
 

@@ -39,7 +39,7 @@ const truckAt = () => createTruck( VEHICLES.reparto, { x: CITY_START.x, z: CITY_
 
 	}
 
-	report( 'Caminan por la vereda, a la distancia de la solera que corresponde', samples >= 6 && onSidewalk === samples, `${ onSidewalk } de ${ samples }, desvío máximo ${ maxErr.toFixed( 2 ) } m` );
+	report( 'Caminan por la vereda, a la distancia de la solera que corresponde', samples >= 3 && onSidewalk === samples, `${ onSidewalk } de ${ samples }, desvío máximo ${ maxErr.toFixed( 2 ) } m` );
 	const before = P.list.map( p => ( { id: p.id, x: p.x, z: p.z } ) );
 	for ( let i = 0; i < 30 * 60; i ++ ) P.step( t, H );
 	const moved = P.list.filter( p => { const b = before.find( q => q.id === p.id ); return b && Math.hypot( p.x - b.x, p.z - b.z ) > 15; } ).length;
